@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Anaqua Load Tracker</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.12);--border-strong:rgba(0,0,0,0.25);
+  --text:#1a1a18;--text-2:#5a5a56;--text-3:#9a9a94;
+  --green:#3B6D11;--green-bg:#EAF3DE;--amber:#854F0B;--amber-bg:#FAEEDA;
+  --red:#A32D2D;--red-bg:#FCEBEB;--blue:#185FA5;--blue-bg:#E6F1FB;
+  --radius:10px;--radius-sm:6px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:15px;min-height:100vh}
+.header{background:var(--surface);border-bottom:0.5px solid var(--border);padding:0 16px;display:flex;align-items:center;height:52px;position:sticky;top:0;z-index:100}
+.header-title{font-size:15px;font-weight:600}
+.header-sub{font-size:11px;color:var(--text-3);margin-top:1px}
+.nav{display:flex;background:var(--surface);border-bottom:0.5px solid var(--border);position:sticky;top:52px;z-index:99;overflow-x:auto}
+.nav-tab{padding:10px 14px;font-size:13px;font-weight:500;color:var(--text-2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;flex-shrink:0}
+.nav-tab.active{color:var(--text);border-bottom-color:var(--text)}
+.screen{display:none;padding:16px}
+.screen.active{display:block}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px}
+.upload-zone{border:1.5px dashed var(--border-strong);border-radius:var(--radius-sm);padding:20px;text-align:center;background:var(--bg);min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative;margin-bottom:8px}
+.upload-zone input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}
+.upload-zone-label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-2);pointer-events:none}
+.upload-zone-hint{font-size:12px;color:var(--text-3);pointer-events:none}
+.upload-thumb{width:100%;max-height:100px;object-fit:cover;border-radius:4px;pointer-events:none}
+.auto-hint{font-size:12px;color:var(--text-3);text-align:center;padding:4px 0 8px}
+.btn{display:block;width:100%;padding:12px;border:0.5px solid var(--border-strong);border-radius:var(--radius-sm);background:transparent;color:var(--text);font-size:14px;font-weight:500;cursor:pointer;text-align:center;-webkit-appearance:none;margin-bottom:8px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:last-child{margin-bottom:0}
+.btn-primary{background:var(--text);color:var(--surface);border-color:var(--text)}
+.btn-green{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-amber{background:var(--amber);color:#fff;border-color:var(--amber)}
+.btn-red{background:var(--red);color:#fff;border-color:var(--red)}
+.btn-sm{display:inline-block;width:auto;padding:6px 14px;font-size:12px;margin-bottom:0}
+.btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.status{font-size:13px;color:var(--text-2);text-align:center;padding:8px 0;min-height:22px}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px}
+.badge-high{background:var(--green-bg);color:var(--green)}
+.badge-medium{background:var(--amber-bg);color:var(--amber)}
+.badge-low,.badge-manual{background:var(--red-bg);color:var(--red)}
+.badge-split{background:#fff9e6;color:#854F0B}
+.badge-pending{background:var(--blue-bg);color:var(--blue)}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.field-item{background:var(--bg);border-radius:var(--radius-sm);padding:8px 10px}
+.field-item-label{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.field-item-val{font-size:13px;font-weight:500}
+.section-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:12px 0 6px}
+.flag-item{font-size:12px;color:var(--red);padding:3px 0}
+.filter-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.filter-row input,.filter-row select{flex:1;min-width:100px;padding:8px 10px;border:0.5px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:13px;-webkit-appearance:none}
+.ticket-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px}
+.ticket-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
+.ticket-card-id{font-size:14px;font-weight:600}
+.ticket-card-meta{font-size:12px;color:var(--text-2);margin-top:2px}
+.ticket-card-badges{display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.load-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;cursor:pointer}
+.load-card:active{background:var(--bg)}
+.load-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.load-card-id{font-size:14px;font-weight:600}
+.load-card-meta{font-size:12px;color:var(--text-2);margin-top:2px}
+.load-card-weights{display:flex;gap:12px;margin-top:6px}
+.load-card-weight{font-size:12px}
+.load-card-weight span{color:var(--text-3)}
+.empty{text-align:center;color:var(--text-3);padding:40px 0;font-size:14px}
+.detail-header{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.back-btn{background:none;border:none;cursor:pointer;color:var(--blue);font-size:14px;font-weight:500;padding:0}
+.detail-title{font-size:16px;font-weight:600}
+.detail-field{display:flex;justify-content:space-between;align-items:flex-start;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:13px;gap:12px}
+.detail-field:last-child{border-bottom:none}
+.detail-field label{color:var(--text-2);flex-shrink:0}
+.detail-field value{font-weight:500;text-align:right}
+.candidate-card{background:var(--surface);border:0.5px solid var(--border-strong);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px}
+.score-bar{display:flex;gap:4px;margin:6px 0}
+.score-dot{width:20px;height:6px;border-radius:3px;background:var(--border)}
+.score-dot.filled{background:var(--green)}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+.spinner-dark{display:inline-block;width:14px;height:14px;border:2px solid rgba(0,0,0,0.15);border-top-color:var(--text);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a18;color:#fff;padding:10px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+.split-banner{background:#fff9e6;border:1.5px solid #f0c040;border-radius:var(--radius-sm);padding:10px 12px;margin-top:10px}
+.split-banner-label{font-size:11px;font-weight:600;color:#854F0B;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.split-banner-val{font-size:13px;font-weight:500}
+.pending-count{display:inline-flex;align-items:center;justify-content:center;background:var(--blue);color:#fff;border-radius:999px;font-size:10px;font-weight:700;min-width:18px;height:18px;padding:0 5px;margin-left:4px}
+.processing-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:12px}
+.processing-text{font-size:13px;color:var(--text-2)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">Anaqua Farms</div>
+    <div class="header-sub">Load Tracker</div>
+  </div>
+</div>
+
+<nav class="nav">
+  <button class="nav-tab active" onclick="showTab('field',this)">Field Ticket</button>
+  <button class="nav-tab" onclick="showTab('delivered',this)">Delivered <span class="pending-count" id="pending-count">0</span></button>
+  <button class="nav-tab" onclick="showTab('pending',this)">Pending Fields</button>
+  <button class="nav-tab" onclick="showTab('pendingdelivered',this)">Pending Delivered <span class="pending-count" id="dpending-count" style="background:var(--amber)">0</span></button>
+  <button class="nav-tab" onclick="showTab('log',this)">Load Log</button>
+</nav>
+
+<!-- FIELD TICKET TAB -->
+<div id="screen-field" class="screen active">
+  <div class="card">
+    <div class="card-title">Capture field ticket</div>
+    <div class="upload-zone" id="field-zone">
+      <input type="file" id="field-file" accept="image/*" onchange="handleFieldUpload(this)">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="opacity:.3;pointer-events:none" id="field-icon"><path d="M12 16V8m0 0-3 3m3-3 3 3M6 20h12a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="upload-zone-label">Field Ticket Photo</div>
+      <div class="upload-zone-hint" id="field-hint">Tap to photograph — saves automatically</div>
+      <img id="field-thumb" class="upload-thumb" style="display:none">
+    </div>
+    <div class="status" id="field-status"></div>
+  </div>
+  <div id="field-result"></div>
+</div>
+
+<!-- DELIVERED TICKET TAB -->
+<div id="screen-delivered" class="screen">
+  <div class="card">
+    <div class="card-title">Match delivered ticket</div>
+    <div class="upload-zone" id="delivered-zone">
+      <input type="file" id="delivered-file" accept="image/*" onchange="handleDeliveredUpload(this)">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="opacity:.3;pointer-events:none" id="delivered-icon"><path d="M12 16V8m0 0-3 3m3-3 3 3M6 20h12a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="upload-zone-label">Delivered Ticket Photo</div>
+      <div class="upload-zone-hint" id="delivered-hint">Tap to photograph — matches automatically</div>
+      <img id="delivered-thumb" class="upload-thumb" style="display:none">
+    </div>
+    <div class="status" id="delivered-status"></div>
+  </div>
+  <div id="delivered-result"></div>
+</div>
+
+<!-- PENDING TAB -->
+<div id="screen-pending" class="screen">
+  <div id="pending-list"><div class="empty">Loading...</div></div>
+</div>
+
+<div id="screen-pendingdelivered" class="screen">
+  <div id="dpending-list"><div class="empty">Loading...</div></div>
+</div>
+
+<!-- LOG TAB -->
+<div id="screen-log" class="screen">
+  <div class="filter-row">
+    <input type="text" id="filter-driver" placeholder="Driver" oninput="loadLogs()">
+    <select id="filter-crop" onchange="loadLogs()">
+      <option value="">All crops</option>
+      <option value="Grain Sorghum">Grain Sorghum</option>
+      <option value="Corn">Corn</option>
+    </select>
+  </div>
+  <div class="filter-row">
+    <input type="text" id="filter-lot" placeholder="Field / lot" oninput="loadLogs()">
+  </div>
+  <div id="log-list"><div class="empty">Loading...</div></div>
+</div>
+
+<!-- DETAIL -->
+<div id="screen-detail" class="screen">
+  <div id="detail-content"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbz_eVEX5SiNcSOviEcG9RjcTuWf0dapMkC2hSQjq9uQGyAIg6MsQFjO-5x8nczz_AU/exec';
+
+let fieldProcessing = false;
+let deliveredProcessing = false;
+let manualDelivered = null;
+
+// ── Nav ───────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'pending') loadPending();
+  if (name === 'pendingdelivered') loadDeliveredPending();
+  if (name === 'log') loadLogs();
+}
+
+function showDetail(data, type) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-detail').classList.add('active');
+  renderDetail(data, type);
+}
+
+function backTo(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  if (name === 'pending') loadPending();
+  if (name === 'pendingdelivered') loadDeliveredPending();
+  if (name === 'log') loadLogs();
+}
+
+// ── Image compression ─────────────────────────────────────────
+function compressImage(file, callback) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 1200;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const compressed = canvas.toDataURL('image/jpeg', 0.75);
+      callback(compressed.split(',')[1], compressed);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Field ticket upload → auto save ──────────────────────────
+function handleFieldUpload(input) {
+  const file = input.files[0];
+  if (!file || fieldProcessing) return;
+  fieldProcessing = true;
+
+  const hint = document.getElementById('field-hint');
+  const status = document.getElementById('field-status');
+  const resultEl = document.getElementById('field-result');
+
+  hint.textContent = 'Compressing...';
+  status.innerHTML = '<span class="spinner-dark"></span>Reading ticket...';
+  resultEl.innerHTML = '';
+
+  compressImage(file, (b64, dataUrl) => {
+    const thumb = document.getElementById('field-thumb');
+    const icon = document.getElementById('field-icon');
+    thumb.src = dataUrl;
+    thumb.style.display = 'block';
+    if (icon) icon.style.display = 'none';
+    hint.textContent = file.name.length > 18 ? file.name.slice(0,18)+'…' : file.name;
+
+    captureField(b64);
+  });
+}
+
+async function captureField(b64) {
+  const status = document.getElementById('field-status');
+  const resultEl = document.getElementById('field-result');
+
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'captureField', imageB64: b64, mime: 'image/jpeg' })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    status.textContent = '';
+    renderFieldResult(data);
+    updatePendingCount();
+    updateDeliveredPendingCount();
+    toast(data.autoMatchedDelivered ? '✓ Matched a pending delivered ticket!' : '✓ Field ticket saved');
+  } catch(e) {
+    status.textContent = '⚠ Error: ' + e.message;
+  }
+  fieldProcessing = false;
+}
+
+function renderFieldResult(data) {
+  const f = data.field || {};
+  const s = data.split || {};
+  const am = data.autoMatchedDelivered;
+  const matchBanner = am
+    ? '<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:4px;">⚡ Auto-matched a pending delivered ticket! (' + am.score + '/5)</div>' +
+      '<div style="font-size:12px;color:var(--text-2)">Matched on: ' + am.matched.join(', ') + '</div>' +
+      '</div>'
+    : '<div class="section-label" style="color:var(--green)">✓ Saved to pending field tickets</div>';
+
+  document.getElementById('field-result').innerHTML =
+    '<div class="card">' + matchBanner +
+    '<div class="field-grid">' +
+    fi('Ticket #', f.ticket_number) + fi('Date', f.date) +
+    fi('Driver', f.driver) + fi('Field / Lot', f.field_lot) +
+    fi('Deliver To', f.deliver_to) + fi('Crop', f.crop) +
+    '</div>' +
+    (f.remarks ? '<div style="margin-top:8px;font-size:12px;color:var(--text-2)"><b>Remarks:</b> ' + f.remarks + '</div>' : '') +
+    (s.isSplit ? '<div class="split-banner"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (s.splitDescription || 'See remarks') + '</div></div>' : '') +
+    '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearField()">Next field ticket</button></div>' +
+    '</div>';
+}
+
+function clearField() {
+  fieldProcessing = false;
+  document.getElementById('field-thumb').style.display = 'none';
+  document.getElementById('field-icon').style.display = '';
+  document.getElementById('field-hint').textContent = 'Tap to photograph — saves automatically';
+  document.getElementById('field-file').value = '';
+  document.getElementById('field-result').innerHTML = '';
+  document.getElementById('field-status').textContent = '';
+}
+
+// ── Delivered ticket upload → auto match ──────────────────────
+function handleDeliveredUpload(input) {
+  const file = input.files[0];
+  if (!file || deliveredProcessing) return;
+  deliveredProcessing = true;
+
+  const hint = document.getElementById('delivered-hint');
+  const status = document.getElementById('delivered-status');
+  const resultEl = document.getElementById('delivered-result');
+
+  hint.textContent = 'Compressing...';
+  status.innerHTML = '<span class="spinner-dark"></span>Reading & matching...';
+  resultEl.innerHTML = '';
+
+  compressImage(file, (b64, dataUrl) => {
+    const thumb = document.getElementById('delivered-thumb');
+    const icon = document.getElementById('delivered-icon');
+    thumb.src = dataUrl;
+    thumb.style.display = 'block';
+    if (icon) icon.style.display = 'none';
+    hint.textContent = file.name.length > 18 ? file.name.slice(0,18)+'…' : file.name;
+
+    matchDelivered(b64);
+  });
+}
+
+async function matchDelivered(b64) {
+  const status = document.getElementById('delivered-status');
+  const resultEl = document.getElementById('delivered-result');
+
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'matchDelivered', imageB64: b64, mime: 'image/jpeg' })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    manualDelivered = data.delivered;
+    status.textContent = '';
+    renderDeliveredResult(data);
+    updatePendingCount();
+  } catch(e) {
+    status.textContent = '⚠ Error: ' + e.message;
+    deliveredProcessing = false;
+  }
+  deliveredProcessing = false;
+}
+
+function renderDeliveredResult(data) {
+  const el = document.getElementById('delivered-result');
+  const d = data.delivered || {};
+
+  if (data.matchResult === 'auto') {
+    const f = data.field || {};
+    const score = data.score || 0;
+    const conf = score >= 4 ? 'high' : 'medium';
+    el.innerHTML =
+      '<div class="card">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
+      '<span class="badge badge-' + conf + '">Auto-matched (' + score + '/5)</span></div>' +
+      scoreBar(score) +
+      '<div class="section-label">Matched on</div>' +
+      '<div style="font-size:13px;color:var(--green);margin-bottom:10px;">✓ ' + (data.matched || []).join(' · ') + '</div>' +
+      (data.flags && data.flags.length ? '<div class="section-label" style="color:var(--amber)">Notes</div>' + data.flags.map(f=>'<div class="flag-item" style="color:var(--amber)">⚠ '+f+'</div>').join('') : '') +
+      '<div class="section-label">Delivered weight</div>' +
+      '<div class="field-grid">' +
+      fi('Net weight', d.net_weight) + fi('Moisture', d.moisture) +
+      fi('Gross', d.gross_weight) + fi('Tare', d.tare_weight) +
+      fi('Bushel wt', d.bushel_weight) + fi('Metric tons', d.metric_tons) +
+      '</div>' +
+      '<div class="section-label">Matched to field ticket</div>' +
+      '<div class="field-grid">' +
+      fi('Ticket #', f['Ticket #']) + fi('Driver', f['Driver']) +
+      fi('Field / Lot', f['Field / Lot']) + fi('Date', f['Date']) +
+      '</div>' +
+      (f['Is Split'] === 'Yes' ? '<div class="split-banner"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (f['Split Description'] || '') + '</div></div>' : '') +
+      '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
+      '</div>';
+    toast('✓ Load matched and saved');
+
+  } else if (data.matchResult === 'manual') {
+    const candidates = data.candidates || [];
+    el.innerHTML =
+      '<div class="card" style="border-color:var(--amber)">' +
+      '<div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:10px;">⚠ Could not auto-match — select the correct field ticket</div>' +
+      '<div class="section-label">Delivered ticket read</div>' +
+      '<div class="field-grid">' +
+      fi('Buyer', d.buyer) + fi('Driver', d.driver) +
+      fi('Net weight', d.net_weight) + fi('Date', d.date) +
+      fi('Field ref', d.field_ticket_ref) + fi('Field lot', d.field_lot) +
+      '</div></div>' +
+      (candidates.length ?
+        '<div class="section-label">Select matching field ticket</div>' +
+        candidates.map(c => candidateCard(c)).join('') +
+        '<div style="margin-top:12px"><button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="holdDelivered()">Hold — field ticket not uploaded yet</button></div>' :
+        '<div class="card" style="border-color:var(--amber);margin-top:4px"><div class="empty" style="padding:16px 0">No matching field tickets found</div>' +
+        '<div class="btn-row">' +
+        '<button class="btn btn-amber" onclick="holdDelivered()">Hold — field ticket not uploaded yet</button>' +
+        '<button class="btn btn-red" onclick="saveUnmatched()">Save as unmatched</button>' +
+        '</div></div>');
+
+  } else if (data.matchResult === 'no_pending') {
+    el.innerHTML =
+      '<div class="card" style="border-color:var(--amber)">' +
+      '<div class="empty" style="padding:16px 0">No pending field tickets in queue</div>' +
+      '<div class="btn-row">' +
+      '<button class="btn btn-amber" onclick="holdDelivered()">Hold — field ticket not uploaded yet</button>' +
+      '<button class="btn btn-red" onclick="saveUnmatched()">Save as unmatched</button>' +
+      '</div>' +
+      '</div>';
+  }
+}
+
+function candidateCard(c) {
+  const p = c.pending || {};
+  const score = c.score || 0;
+  return '<div class="candidate-card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+    '<div><div style="font-size:14px;font-weight:600">Ticket #' + (p['Ticket #'] || '—') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-2);margin-top:2px">' + (p['Driver'] || '—') + ' · ' + (p['Field / Lot'] || '—') + ' · ' + (p['Date'] || '—') + '</div></div>' +
+    '<div style="font-size:20px;font-weight:700;color:var(--amber)">' + score + '/5</div></div>' +
+    scoreBar(score) +
+    (c.matched && c.matched.length ? '<div style="font-size:12px;color:var(--green);margin-top:4px">✓ ' + c.matched.join(', ') + '</div>' : '') +
+    (c.flags && c.flags.length ? '<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ ' + c.flags.join(' · ') + '</div>' : '') +
+    '<button class="btn btn-amber btn-sm" style="margin-top:10px" onclick="confirmManual(' + p._row + ')">Match this ticket</button>' +
+    '</div>';
+}
+
+function scoreBar(score) {
+  let html = '<div class="score-bar">';
+  for (let i = 0; i < 5; i++) html += '<div class="score-dot' + (i < score ? ' filled' : '') + '"></div>';
+  return html + '</div>';
+}
+
+async function confirmManual(pendingRow) {
+  if (!manualDelivered) return;
+  const resultEl = document.getElementById('delivered-result');
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'manualMatch', pendingRow, deliveredData: manualDelivered, matchedFields: [], flags: ['Manually matched'] })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    resultEl.innerHTML =
+      '<div class="card"><div style="color:var(--green);font-weight:500;padding:8px 0">✓ Manually matched and saved to Load Log</div>' +
+      '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div></div>';
+    updatePendingCount();
+    toast('✓ Load matched and saved');
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function holdDelivered() {
+  if (!manualDelivered) return;
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'holdDelivered', deliveredData: manualDelivered })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    document.getElementById('delivered-result').innerHTML =
+      '<div class="card" style="border-color:var(--amber)">' +
+      '<div style="color:var(--amber);font-weight:500;padding:4px 0">Held in Pending Delivered — will auto-match when field ticket is uploaded</div>' +
+      '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
+      '</div>';
+    updateDeliveredPendingCount();
+    toast('Held for later matching');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function loadDeliveredPending() {
+  document.getElementById('dpending-list').innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getDeliveredPending' }) });
+    const data = await resp.json();
+    renderDeliveredPending(data.pending || []);
+    updateDeliveredPendingCount((data.pending || []).length);
+  } catch(e) {
+    document.getElementById('dpending-list').innerHTML = '<div class="empty">Error loading</div>';
+  }
+}
+
+function renderDeliveredPending(list) {
+  const el = document.getElementById('dpending-list');
+  if (!list.length) { el.innerHTML = '<div class="empty">No pending delivered tickets</div>'; return; }
+  el.innerHTML = list.map(p =>
+    '<div class="ticket-card" style="border-color:var(--amber)">' +
+    '<div class="ticket-card-top"><div>' +
+    '<div class="ticket-card-id">Delivered Ticket #' + (p['Ticket #'] || '?') + '</div>' +
+    '<div class="ticket-card-meta">' + (p['Date'] || '?') + ' &middot; ' + (p['Driver'] || '?') + ' &middot; ' + (p['Buyer'] || '?') + '</div>' +
+    '<div class="ticket-card-meta">Net: ' + (p['Net Weight'] || '?') + ' &middot; Field Lot: ' + (p['Field Lot'] || '?') + '</div>' +
+    (p['Field Ticket Ref'] ? '<div class="ticket-card-meta">Ref: ' + p['Field Ticket Ref'] + '</div>' : '') +
+    '</div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' +
+    '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">Waiting</span>' +
+    '</div></div>' +
+    '</div>'
+  ).join('');
+}
+
+async function updateDeliveredPendingCount(count) {
+  if (count === undefined) {
+    try {
+      const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getDeliveredPending' }) });
+      const data = await resp.json();
+      count = (data.pending || []).length;
+    } catch(e) { return; }
+  }
+  const el = document.getElementById('dpending-count');
+  if (el) el.textContent = count;
+}
+
+async function saveUnmatched() {
+  if (!manualDelivered) return;
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'saveUnmatched', deliveredData: manualDelivered })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    document.getElementById('delivered-result').innerHTML =
+      '<div class="card" style="border-color:var(--red)">' +
+      '<div style="color:var(--red);font-weight:500;padding:4px 0">Saved as unmatched — flagged for review in Load Log</div>' +
+      '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
+      '</div>';
+    toast('Saved as unmatched');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function clearDelivered() {
+  deliveredProcessing = false;
+  manualDelivered = null;
+  document.getElementById('delivered-thumb').style.display = 'none';
+  document.getElementById('delivered-icon').style.display = '';
+  document.getElementById('delivered-hint').textContent = 'Tap to photograph — matches automatically';
+  document.getElementById('delivered-file').value = '';
+  document.getElementById('delivered-result').innerHTML = '';
+  document.getElementById('delivered-status').textContent = '';
+}
+
+// ── Pending ───────────────────────────────────────────────────
+async function loadPending() {
+  document.getElementById('pending-list').innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getPending' }) });
+    const data = await resp.json();
+    renderPending(data.pending || []);
+    updatePendingCount((data.pending || []).length);
+  } catch(e) {
+    document.getElementById('pending-list').innerHTML = '<div class="empty">Error loading</div>';
+  }
+}
+
+function renderPending(list) {
+  const el = document.getElementById('pending-list');
+  if (!list.length) { el.innerHTML = '<div class="empty">No pending field tickets</div>'; return; }
+  el.innerHTML = list.map(p =>
+    '<div class="ticket-card">' +
+    '<div class="ticket-card-top"><div>' +
+    '<div class="ticket-card-id">Ticket #' + (p['Ticket #'] || '—') + '</div>' +
+    '<div class="ticket-card-meta">' + (p['Date'] || '—') + ' · ' + (p['Driver'] || '—') + '</div>' +
+    '<div class="ticket-card-meta">' + (p['Field / Lot'] || '—') + ' → ' + (p['Deliver To'] || '—') + '</div>' +
+    '</div><div class="ticket-card-badges">' +
+    '<span class="badge badge-pending">Pending</span>' +
+    (p['Is Split'] === 'Yes' ? '<span class="badge badge-split">⚡ Split</span>' : '') +
+    '</div></div>' +
+    (p['Remarks'] ? '<div style="font-size:11px;color:var(--text-3);margin-top:4px">Remarks: ' + p['Remarks'] + '</div>' : '') +
+    '</div>'
+  ).join('');
+}
+
+async function updatePendingCount(count) {
+  if (count === undefined) {
+    try {
+      const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getPending' }) });
+      const data = await resp.json();
+      count = (data.pending || []).length;
+    } catch(e) { return; }
+  }
+  document.getElementById('pending-count').textContent = count;
+}
+
+// ── Load log ──────────────────────────────────────────────────
+async function loadLogs() {
+  const driver = document.getElementById('filter-driver').value;
+  const crop = document.getElementById('filter-crop').value;
+  const lot = document.getElementById('filter-lot').value;
+  document.getElementById('log-list').innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getLogs', driver, crop, lot }) });
+    const data = await resp.json();
+    renderLogs(data.loads || []);
+  } catch(e) {
+    document.getElementById('log-list').innerHTML = '<div class="empty">Error loading</div>';
+  }
+}
+
+function renderLogs(loads) {
+  const el = document.getElementById('log-list');
+  if (!loads.length) { el.innerHTML = '<div class="empty">No loads found</div>'; return; }
+  el.innerHTML = loads.map(l => {
+    const conf = l['Match Confidence'] || 'low';
+    const encoded = encodeURIComponent(JSON.stringify(l));
+    return '<div class="load-card" onclick=\'showDetail(JSON.parse(decodeURIComponent("' + encoded + '")), "log")\'>' +
+      '<div class="load-card-top"><div>' +
+      '<div class="load-card-id">#' + (l['Field Ticket #'] || l['Load #']) + '</div>' +
+      '<div class="load-card-meta">' + (l['Field Date'] || '—') + ' · ' + (l['Driver'] || '—') + ' · ' + (l['Field / Lot'] || '—') + '</div>' +
+      '</div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' +
+      '<span class="badge badge-' + conf + '">' + conf + '</span>' +
+      (l['Is Split'] === 'Yes' ? '<span class="badge badge-split">⚡ Split</span>' : '') +
+      (l['Reviewed'] === 'Yes' ? '<span class="badge" style="background:var(--green-bg);color:var(--green)">Reviewed</span>' : '') +
+      '</div></div>' +
+      '<div class="load-card-weights">' +
+      '<div class="load-card-weight"><span>Net </span>' + (l['Net Weight'] || '—') + '</div>' +
+      '<div class="load-card-weight"><span>Moist </span>' + (l['Moisture'] || '—') + '</div>' +
+      '<div class="load-card-weight"><span>Buyer </span>' + (l['Buyer'] || '—') + '</div>' +
+      '</div></div>';
+  }).join('');
+}
+
+// ── Detail ────────────────────────────────────────────────────
+function renderDetail(load, type) {
+  const fields = [
+    ['Field Ticket #', load['Field Ticket #']], ['Delivered Ticket #', load['Delivered Ticket #']],
+    ['Contract #', load['Contract #']], ['Field Date', load['Field Date']],
+    ['Delivered Date', load['Delivered Date']], ['Driver', load['Driver']],
+    ['Truck Owner', load['Truck Owner']], ['Crop', load['Crop']],
+    ['Farm', load['Farm']], ['Field / Lot', load['Field / Lot']],
+    ['Delivered Lot', load['Delivered Lot']], ['Producer', load['Producer']],
+    ['Buyer', load['Buyer']], ['Gross Weight', load['Gross Weight']],
+    ['Tare Weight', load['Tare Weight']], ['Net Weight', load['Net Weight']],
+    ['Metric Tons', load['Metric Tons']], ['Moisture', load['Moisture']],
+    ['Bushel Weight', load['Bushel Weight']], ['Match Score', load['Match Score']],
+    ['Matched On', load['Matched On']], ['Flags', load['Flags']],
+  ];
+  const conf = load['Match Confidence'] || 'low';
+  const flags = (load['Flags'] || '').split(';').filter(Boolean);
+  document.getElementById('detail-content').innerHTML =
+    '<div class="detail-header">' +
+    '<button class="back-btn" onclick="backTo(\'' + type + '\')">← Back</button>' +
+    '<div class="detail-title">Load #' + (load['Field Ticket #'] || load['Load #']) + '</div>' +
+    '<span class="badge badge-' + conf + '">' + conf + '</span>' +
+    (load['Is Split'] === 'Yes' ? '<span class="badge badge-split">⚡ Split</span>' : '') +
+    '</div>' +
+    (load['Is Split'] === 'Yes' ? '<div class="split-banner" style="margin-bottom:12px"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (load['Split Description'] || '') + '</div></div>' : '') +
+    (flags.length ? '<div class="card" style="border-color:var(--amber);margin-bottom:12px">' + flags.map(f => '<div class="flag-item" style="color:var(--amber)">⚠ ' + f + '</div>').join('') + '</div>' : '') +
+    '<div class="card">' +
+    fields.filter(([,v]) => v).map(([l,v]) => '<div class="detail-field"><label>' + l + '</label><value>' + v + '</value></div>').join('') +
+    '</div>' +
+    '<div class="btn-row"><button class="btn btn-sm" onclick="markReviewed(' + load._row + ')">Mark reviewed</button></div>';
+}
+
+async function markReviewed(row) {
+  try {
+    await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'markReviewed', row }) });
+    toast('Marked as reviewed');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function fi(label, val) {
+  return '<div class="field-item"><div class="field-item-label">' + label + '</div>' +
+    '<div class="field-item-val">' + (val || '<span style="color:var(--text-3)">—</span>') + '</div></div>';
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+updatePendingCount();
+updateDeliveredPendingCount();
+</script>
+</body>
+</html>
