@@ -37,6 +37,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-green{background:var(--green);color:#fff;border-color:var(--green)}
 .btn-amber{background:var(--amber);color:#fff;border-color:var(--amber)}
 .btn-red{background:var(--red);color:#fff;border-color:var(--red)}
+.btn-blue{background:var(--blue);color:#fff;border-color:var(--blue);font-size:15px;padding:14px}
 .btn-sm{display:inline-block;width:auto;padding:6px 14px;font-size:12px;margin-bottom:0}
 .btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .status{font-size:13px;color:var(--text-2);text-align:center;padding:8px 0;min-height:22px}
@@ -90,6 +91,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .pending-count{display:inline-flex;align-items:center;justify-content:center;background:var(--blue);color:#fff;border-radius:999px;font-size:10px;font-weight:700;min-width:18px;height:18px;padding:0 5px;margin-left:4px}
 .processing-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:12px}
 .processing-text{font-size:13px;color:var(--text-2)}
+.btn-delete{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-sm);background:var(--red-bg);border:none;cursor:pointer;color:var(--red);font-size:18px;flex-shrink:0;line-height:1}
 </style>
 </head>
 <body>
@@ -114,13 +116,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="card">
     <div class="card-title">Capture field ticket</div>
     <div class="upload-zone" id="field-zone">
-      <input type="file" id="field-file" accept="image/*" onchange="handleFieldUpload(this)">
+      <input type="file" id="field-file" accept="image/*,application/pdf" onchange="handleFieldUpload(this)">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="opacity:.3;pointer-events:none" id="field-icon"><path d="M12 16V8m0 0-3 3m3-3 3 3M6 20h12a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div class="upload-zone-label">Field Ticket Photo</div>
       <div class="upload-zone-hint" id="field-hint">Tap to photograph — saves automatically</div>
       <img id="field-thumb" class="upload-thumb" style="display:none">
     </div>
     <div class="status" id="field-status"></div>
+    <button class="btn btn-blue" onclick="clearField()">Next Field Ticket</button>
   </div>
   <div id="field-result"></div>
 </div>
@@ -130,13 +133,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="card">
     <div class="card-title">Match delivered ticket</div>
     <div class="upload-zone" id="delivered-zone">
-      <input type="file" id="delivered-file" accept="image/*" onchange="handleDeliveredUpload(this)">
+      <input type="file" id="delivered-file" accept="image/*,application/pdf" onchange="handleDeliveredUpload(this)">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="opacity:.3;pointer-events:none" id="delivered-icon"><path d="M12 16V8m0 0-3 3m3-3 3 3M6 20h12a2 2 0 0 0 2-2V8l-6-6H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div class="upload-zone-label">Delivered Ticket Photo</div>
       <div class="upload-zone-hint" id="delivered-hint">Tap to photograph — matches automatically</div>
       <img id="delivered-thumb" class="upload-thumb" style="display:none">
     </div>
     <div class="status" id="delivered-status"></div>
+    <button class="btn btn-blue" onclick="clearDelivered()">Next Delivered Ticket</button>
+  </div>
+  <div id="delivered-action-btns" style="display:none;margin:0 0 12px">
+    <div style="display:flex;gap:8px">
+      <button id="action-next-btn" class="btn btn-primary" style="flex:1;margin-bottom:0" onclick="clearDelivered()">Next Ticket</button>
+      <button id="action-hold-btn" class="btn btn-amber" style="flex:1;margin-bottom:0" onclick="holdDelivered(this)">Hold for Later</button>
+    </div>
   </div>
   <div id="delivered-result"></div>
 </div>
@@ -180,6 +190,23 @@ let fieldProcessing = false;
 let deliveredProcessing = false;
 let manualDelivered = null;
 
+// ── Cache ─────────────────────────────────────────────────────
+const _cache = {};
+const CACHE_TTL = 300000;
+function cacheGet(k) { const e = _cache[k]; return e && Date.now()-e.ts < CACHE_TTL ? e.data : null; }
+function cacheSet(k, d) { _cache[k] = { data: d, ts: Date.now() }; }
+function cacheDel(...keys) { keys.forEach(k => delete _cache[k]); }
+function normStr(s) { return (s||'').toLowerCase().trim(); }
+function formatDate(val) {
+  if (!val) return '—';
+  const s = String(val).trim();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) return s;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  const m = d.getUTCMonth() + 1, day = d.getUTCDate(), yr = d.getUTCFullYear();
+  return (m<10?'0'+m:m) + '/' + (day<10?'0'+day:day) + '/' + yr;
+}
+
 // ── Nav ───────────────────────────────────────────────────────
 function showTab(name, btn) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -207,6 +234,15 @@ function backTo(name) {
 
 // ── Image compression ─────────────────────────────────────────
 function compressImage(file, callback) {
+  if (file.type === 'application/pdf') {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = e.target.result;
+      callback(dataUrl.split(',')[1], dataUrl, 'application/pdf');
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
   const reader = new FileReader();
   reader.onload = e => {
     const img = new Image();
@@ -220,8 +256,8 @@ function compressImage(file, callback) {
       }
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      const compressed = canvas.toDataURL('image/jpeg', 0.75);
-      callback(compressed.split(',')[1], compressed);
+      const compressed = canvas.toDataURL('image/jpeg', 0.85);
+      callback(compressed.split(',')[1], compressed, 'image/jpeg');
     };
     img.src = e.target.result;
   };
@@ -242,31 +278,36 @@ function handleFieldUpload(input) {
   status.innerHTML = '<span class="spinner-dark"></span>Reading ticket...';
   resultEl.innerHTML = '';
 
-  compressImage(file, (b64, dataUrl) => {
+  compressImage(file, (b64, dataUrl, mime) => {
     const thumb = document.getElementById('field-thumb');
     const icon = document.getElementById('field-icon');
-    thumb.src = dataUrl;
-    thumb.style.display = 'block';
-    if (icon) icon.style.display = 'none';
+    if (mime === 'application/pdf') {
+      if (icon) icon.style.display = 'none';
+    } else {
+      thumb.src = dataUrl;
+      thumb.style.display = 'block';
+      if (icon) icon.style.display = 'none';
+    }
     hint.textContent = file.name.length > 18 ? file.name.slice(0,18)+'…' : file.name;
 
-    captureField(b64);
+    captureField(b64, mime);
   });
 }
 
-async function captureField(b64) {
+async function captureField(b64, mime) {
   const status = document.getElementById('field-status');
   const resultEl = document.getElementById('field-result');
 
   try {
     const resp = await fetch(API, {
       method: 'POST',
-      body: JSON.stringify({ action: 'captureField', imageB64: b64, mime: 'image/jpeg' })
+      body: JSON.stringify({ action: 'captureField', imageB64: b64, mime: mime || 'image/jpeg' })
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
     status.textContent = '';
     renderFieldResult(data);
+    cacheDel('pending', 'dpending', 'logs');
     updatePendingCount();
     updateDeliveredPendingCount();
     toast(data.autoMatchedDelivered ? '✓ Matched a pending delivered ticket!' : '✓ Field ticket saved');
@@ -290,7 +331,7 @@ function renderFieldResult(data) {
   document.getElementById('field-result').innerHTML =
     '<div class="card">' + matchBanner +
     '<div class="field-grid">' +
-    fi('Ticket #', f.ticket_number) + fi('Date', f.date) +
+    fi('Ticket #', f.ticket_number) + fi('Date', formatDate(f.date)) +
     fi('Driver', f.driver) + fi('Field / Lot', f.field_lot) +
     fi('Deliver To', f.deliver_to) + fi('Crop', f.crop) +
     '</div>' +
@@ -324,32 +365,37 @@ function handleDeliveredUpload(input) {
   status.innerHTML = '<span class="spinner-dark"></span>Reading & matching...';
   resultEl.innerHTML = '';
 
-  compressImage(file, (b64, dataUrl) => {
+  compressImage(file, (b64, dataUrl, mime) => {
     const thumb = document.getElementById('delivered-thumb');
     const icon = document.getElementById('delivered-icon');
-    thumb.src = dataUrl;
-    thumb.style.display = 'block';
-    if (icon) icon.style.display = 'none';
+    if (mime === 'application/pdf') {
+      if (icon) icon.style.display = 'none';
+    } else {
+      thumb.src = dataUrl;
+      thumb.style.display = 'block';
+      if (icon) icon.style.display = 'none';
+    }
     hint.textContent = file.name.length > 18 ? file.name.slice(0,18)+'…' : file.name;
 
-    matchDelivered(b64);
+    matchDelivered(b64, mime);
   });
 }
 
-async function matchDelivered(b64) {
+async function matchDelivered(b64, mime) {
   const status = document.getElementById('delivered-status');
   const resultEl = document.getElementById('delivered-result');
 
   try {
     const resp = await fetch(API, {
       method: 'POST',
-      body: JSON.stringify({ action: 'matchDelivered', imageB64: b64, mime: 'image/jpeg' })
+      body: JSON.stringify({ action: 'matchDelivered', imageB64: b64, mime: mime || 'image/jpeg' })
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
     manualDelivered = data.delivered;
     status.textContent = '';
     renderDeliveredResult(data);
+    cacheDel('pending', 'dpending', 'logs');
     updatePendingCount();
   } catch(e) {
     status.textContent = '⚠ Error: ' + e.message;
@@ -360,9 +406,11 @@ async function matchDelivered(b64) {
 
 function renderDeliveredResult(data) {
   const el = document.getElementById('delivered-result');
+  const actionBtns = document.getElementById('delivered-action-btns');
   const d = data.delivered || {};
 
   if (data.matchResult === 'auto') {
+    actionBtns.style.display = 'none';
     const f = data.field || {};
     const score = data.score || 0;
     const conf = score >= 4 ? 'high' : 'medium';
@@ -378,12 +426,12 @@ function renderDeliveredResult(data) {
       '<div class="field-grid">' +
       fi('Net weight', d.net_weight) + fi('Moisture', d.moisture) +
       fi('Gross', d.gross_weight) + fi('Tare', d.tare_weight) +
-      fi('Bushel wt', d.bushel_weight) + fi('Metric tons', d.metric_tons) +
+      fi('Bushel wt', d.bushel_weight) +
       '</div>' +
       '<div class="section-label">Matched to field ticket</div>' +
       '<div class="field-grid">' +
       fi('Ticket #', f['Ticket #']) + fi('Driver', f['Driver']) +
-      fi('Field / Lot', f['Field / Lot']) + fi('Date', f['Date']) +
+      fi('Field / Lot', f['Field / Lot']) + fi('Date', formatDate(f['Date'])) +
       '</div>' +
       (f['Is Split'] === 'Yes' ? '<div class="split-banner"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (f['Split Description'] || '') + '</div></div>' : '') +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
@@ -391,6 +439,11 @@ function renderDeliveredResult(data) {
     toast('✓ Load matched and saved');
 
   } else if (data.matchResult === 'manual') {
+    actionBtns.style.display = '';
+    const nextBtn = document.getElementById('action-next-btn');
+    const holdBtn = document.getElementById('action-hold-btn');
+    if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Next Ticket'; }
+    if (holdBtn) { holdBtn.disabled = false; holdBtn.textContent = 'Hold for Later'; }
     const candidates = data.candidates || [];
     el.innerHTML =
       '<div class="card" style="border-color:var(--amber)">' +
@@ -398,27 +451,25 @@ function renderDeliveredResult(data) {
       '<div class="section-label">Delivered ticket read</div>' +
       '<div class="field-grid">' +
       fi('Buyer', d.buyer) + fi('Driver', d.driver) +
-      fi('Net weight', d.net_weight) + fi('Date', d.date) +
+      fi('Net weight', d.net_weight) + fi('Date', formatDate(d.date)) +
       fi('Field ref', d.field_ticket_ref) + fi('Field lot', d.field_lot) +
       '</div></div>' +
       (candidates.length ?
         '<div class="section-label">Select matching field ticket</div>' +
-        candidates.map(c => candidateCard(c)).join('') +
-        '<div style="margin-top:12px"><button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="holdDelivered()">Hold — field ticket not uploaded yet</button></div>' :
+        candidates.map(c => candidateCard(c)).join('') :
         '<div class="card" style="border-color:var(--amber);margin-top:4px"><div class="empty" style="padding:16px 0">No matching field tickets found</div>' +
-        '<div class="btn-row">' +
-        '<button class="btn btn-amber" onclick="holdDelivered()">Hold — field ticket not uploaded yet</button>' +
-        '<button class="btn btn-red" onclick="saveUnmatched()">Save as unmatched</button>' +
-        '</div></div>');
+        '<div class="btn-row"><button class="btn btn-red" onclick="saveUnmatched()">Save as unmatched</button></div></div>');
 
   } else if (data.matchResult === 'no_pending') {
+    actionBtns.style.display = '';
+    const nextBtn2 = document.getElementById('action-next-btn');
+    const holdBtn2 = document.getElementById('action-hold-btn');
+    if (nextBtn2) { nextBtn2.disabled = false; nextBtn2.textContent = 'Next Ticket'; }
+    if (holdBtn2) { holdBtn2.disabled = false; holdBtn2.textContent = 'Hold for Later'; }
     el.innerHTML =
       '<div class="card" style="border-color:var(--amber)">' +
       '<div class="empty" style="padding:16px 0">No pending field tickets in queue</div>' +
-      '<div class="btn-row">' +
-      '<button class="btn btn-amber" onclick="holdDelivered()">Hold — field ticket not uploaded yet</button>' +
-      '<button class="btn btn-red" onclick="saveUnmatched()">Save as unmatched</button>' +
-      '</div>' +
+      '<div class="btn-row"><button class="btn btn-red" onclick="saveUnmatched(this)">Save as unmatched</button></div>' +
       '</div>';
   }
 }
@@ -429,12 +480,12 @@ function candidateCard(c) {
   return '<div class="candidate-card">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
     '<div><div style="font-size:14px;font-weight:600">Ticket #' + (p['Ticket #'] || '—') + '</div>' +
-    '<div style="font-size:12px;color:var(--text-2);margin-top:2px">' + (p['Driver'] || '—') + ' · ' + (p['Field / Lot'] || '—') + ' · ' + (p['Date'] || '—') + '</div></div>' +
+    '<div style="font-size:12px;color:var(--text-2);margin-top:2px">' + (p['Driver'] || '—') + ' · ' + (p['Field / Lot'] || '—') + ' · ' + formatDate(p['Date']) + '</div></div>' +
     '<div style="font-size:20px;font-weight:700;color:var(--amber)">' + score + '/5</div></div>' +
     scoreBar(score) +
     (c.matched && c.matched.length ? '<div style="font-size:12px;color:var(--green);margin-top:4px">✓ ' + c.matched.join(', ') + '</div>' : '') +
     (c.flags && c.flags.length ? '<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ ' + c.flags.join(' · ') + '</div>' : '') +
-    '<button class="btn btn-amber btn-sm" style="margin-top:10px" onclick="confirmManual(' + p._row + ')">Match this ticket</button>' +
+    '<button class="btn btn-amber btn-sm candidate-match-btn" style="margin-top:10px" onclick="confirmManual(this,' + p._row + ')">Match this ticket</button>' +
     '</div>';
 }
 
@@ -444,8 +495,11 @@ function scoreBar(score) {
   return html + '</div>';
 }
 
-async function confirmManual(pendingRow) {
+async function confirmManual(btn, pendingRow) {
   if (!manualDelivered) return;
+  const allBtns = document.querySelectorAll('.candidate-match-btn');
+  allBtns.forEach(b => { b.disabled = true; });
+  btn.textContent = 'Matching...';
   const resultEl = document.getElementById('delivered-result');
   try {
     const resp = await fetch(API, {
@@ -457,15 +511,21 @@ async function confirmManual(pendingRow) {
     resultEl.innerHTML =
       '<div class="card"><div style="color:var(--green);font-weight:500;padding:8px 0">✓ Manually matched and saved to Load Log</div>' +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div></div>';
+    cacheDel('pending', 'logs');
     updatePendingCount();
     toast('✓ Load matched and saved');
   } catch(e) {
+    allBtns.forEach(b => { b.disabled = false; });
+    btn.textContent = 'Match this ticket';
     toast('Error: ' + e.message);
   }
 }
 
-async function holdDelivered() {
+async function holdDelivered(btn) {
   if (!manualDelivered) return;
+  const nextBtn = document.getElementById('action-next-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  if (nextBtn) nextBtn.disabled = true;
   try {
     const resp = await fetch(API, {
       method: 'POST',
@@ -473,23 +533,43 @@ async function holdDelivered() {
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
-    document.getElementById('delivered-result').innerHTML =
+    document.getElementById('delivered-action-btns').style.display = 'none';
+    const resultEl2 = document.getElementById('delivered-result');
+    resultEl2.innerHTML =
       '<div class="card" style="border-color:var(--amber)">' +
-      '<div style="color:var(--amber);font-weight:500;padding:4px 0">Held in Pending Delivered — will auto-match when field ticket is uploaded</div>' +
+      '<div style="color:var(--amber);font-weight:500;padding:8px 0">Held in Pending Delivered — will auto-match when field ticket is uploaded</div>' +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
       '</div>';
+    resultEl2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    cacheDel('dpending');
     updateDeliveredPendingCount();
     toast('Held for later matching');
-  } catch(e) { toast('Error: ' + e.message); }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Hold for Later';
+    if (nextBtn) nextBtn.disabled = false;
+    toast('Error: ' + e.message);
+  }
 }
 
 async function loadDeliveredPending() {
+  const cached = cacheGet('dpending');
+  if (cached) {
+    renderDeliveredPending(cached);
+    updateDeliveredPendingCount(cached.length);
+    fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getDeliveredPending' }) })
+      .then(r => r.json())
+      .then(data => { const list = data.pending || []; cacheSet('dpending', list); renderDeliveredPending(list); updateDeliveredPendingCount(list.length); })
+      .catch(() => {});
+    return;
+  }
   document.getElementById('dpending-list').innerHTML = '<div class="empty">Loading...</div>';
   try {
     const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getDeliveredPending' }) });
     const data = await resp.json();
-    renderDeliveredPending(data.pending || []);
-    updateDeliveredPendingCount((data.pending || []).length);
+    const list = data.pending || [];
+    cacheSet('dpending', list);
+    renderDeliveredPending(list);
+    updateDeliveredPendingCount(list.length);
   } catch(e) {
     document.getElementById('dpending-list').innerHTML = '<div class="empty">Error loading</div>';
   }
@@ -500,32 +580,41 @@ function renderDeliveredPending(list) {
   if (!list.length) { el.innerHTML = '<div class="empty">No pending delivered tickets</div>'; return; }
   el.innerHTML = list.map(p =>
     '<div class="ticket-card" style="border-color:var(--amber)">' +
-    '<div class="ticket-card-top"><div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+    '<div style="display:flex;gap:6px">' +
+    '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">Waiting</span>' +
+    '</div>' +
+    '<button class="btn-delete" onclick="deleteDeliveredPendingEntry(this,' + p._row + ')">&#215;</button>' +
+    '</div>' +
     '<div class="ticket-card-id">Delivered Ticket #' + (p['Ticket #'] || '?') + '</div>' +
-    '<div class="ticket-card-meta">' + (p['Date'] || '?') + ' &middot; ' + (p['Driver'] || '?') + ' &middot; ' + (p['Buyer'] || '?') + '</div>' +
+    '<div class="ticket-card-meta">' + formatDate(p['Date']) + ' &middot; ' + (p['Driver'] || '?') + ' &middot; ' + (p['Buyer'] || '?') + '</div>' +
     '<div class="ticket-card-meta">Net: ' + (p['Net Weight'] || '?') + ' &middot; Field Lot: ' + (p['Field Lot'] || '?') + '</div>' +
     (p['Field Ticket Ref'] ? '<div class="ticket-card-meta">Ref: ' + p['Field Ticket Ref'] + '</div>' : '') +
-    '</div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' +
-    '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">Waiting</span>' +
-    '</div></div>' +
     '</div>'
   ).join('');
 }
 
 async function updateDeliveredPendingCount(count) {
   if (count === undefined) {
-    try {
-      const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getDeliveredPending' }) });
-      const data = await resp.json();
-      count = (data.pending || []).length;
-    } catch(e) { return; }
+    const cached = cacheGet('dpending');
+    if (cached) { count = cached.length; }
+    else {
+      try {
+        const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getDeliveredPending' }) });
+        const data = await resp.json();
+        const list = data.pending || [];
+        cacheSet('dpending', list);
+        count = list.length;
+      } catch(e) { return; }
+    }
   }
   const el = document.getElementById('dpending-count');
   if (el) el.textContent = count;
 }
 
-async function saveUnmatched() {
+async function saveUnmatched(btn) {
   if (!manualDelivered) return;
+  btn.disabled = true; btn.textContent = 'Saving...';
   try {
     const resp = await fetch(API, {
       method: 'POST',
@@ -533,13 +622,18 @@ async function saveUnmatched() {
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
+    document.getElementById('delivered-action-btns').style.display = 'none';
     document.getElementById('delivered-result').innerHTML =
       '<div class="card" style="border-color:var(--red)">' +
       '<div style="color:var(--red);font-weight:500;padding:4px 0">Saved as unmatched — flagged for review in Load Log</div>' +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
       '</div>';
+    cacheDel('logs');
     toast('Saved as unmatched');
-  } catch(e) { toast('Error: ' + e.message); }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Save as unmatched';
+    toast('Error: ' + e.message);
+  }
 }
 
 function clearDelivered() {
@@ -551,16 +645,33 @@ function clearDelivered() {
   document.getElementById('delivered-file').value = '';
   document.getElementById('delivered-result').innerHTML = '';
   document.getElementById('delivered-status').textContent = '';
+  document.getElementById('delivered-action-btns').style.display = 'none';
+  const nextBtn = document.getElementById('action-next-btn');
+  const holdBtn = document.getElementById('action-hold-btn');
+  if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Next Ticket'; }
+  if (holdBtn) { holdBtn.disabled = false; holdBtn.textContent = 'Hold for Later'; }
 }
 
 // ── Pending ───────────────────────────────────────────────────
 async function loadPending() {
+  const cached = cacheGet('pending');
+  if (cached) {
+    renderPending(cached);
+    updatePendingCount(cached.length);
+    fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getPending' }) })
+      .then(r => r.json())
+      .then(data => { const list = data.pending || []; cacheSet('pending', list); renderPending(list); updatePendingCount(list.length); })
+      .catch(() => {});
+    return;
+  }
   document.getElementById('pending-list').innerHTML = '<div class="empty">Loading...</div>';
   try {
     const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getPending' }) });
     const data = await resp.json();
-    renderPending(data.pending || []);
-    updatePendingCount((data.pending || []).length);
+    const list = data.pending || [];
+    cacheSet('pending', list);
+    renderPending(list);
+    updatePendingCount(list.length);
   } catch(e) {
     document.getElementById('pending-list').innerHTML = '<div class="empty">Error loading</div>';
   }
@@ -571,14 +682,16 @@ function renderPending(list) {
   if (!list.length) { el.innerHTML = '<div class="empty">No pending field tickets</div>'; return; }
   el.innerHTML = list.map(p =>
     '<div class="ticket-card">' +
-    '<div class="ticket-card-top"><div>' +
-    '<div class="ticket-card-id">Ticket #' + (p['Ticket #'] || '—') + '</div>' +
-    '<div class="ticket-card-meta">' + (p['Date'] || '—') + ' · ' + (p['Driver'] || '—') + '</div>' +
-    '<div class="ticket-card-meta">' + (p['Field / Lot'] || '—') + ' → ' + (p['Deliver To'] || '—') + '</div>' +
-    '</div><div class="ticket-card-badges">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
     '<span class="badge badge-pending">Pending</span>' +
     (p['Is Split'] === 'Yes' ? '<span class="badge badge-split">⚡ Split</span>' : '') +
-    '</div></div>' +
+    '</div>' +
+    '<button class="btn-delete" onclick="deletePendingEntry(this,' + p._row + ')">&#215;</button>' +
+    '</div>' +
+    '<div class="ticket-card-id">Ticket #' + (p['Ticket #'] || '—') + '</div>' +
+    '<div class="ticket-card-meta">' + formatDate(p['Date']) + ' · ' + (p['Driver'] || '—') + '</div>' +
+    '<div class="ticket-card-meta">' + (p['Field / Lot'] || '—') + ' → ' + (p['Deliver To'] || '—') + '</div>' +
     (p['Remarks'] ? '<div style="font-size:11px;color:var(--text-3);margin-top:4px">Remarks: ' + p['Remarks'] + '</div>' : '') +
     '</div>'
   ).join('');
@@ -586,25 +699,51 @@ function renderPending(list) {
 
 async function updatePendingCount(count) {
   if (count === undefined) {
-    try {
-      const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getPending' }) });
-      const data = await resp.json();
-      count = (data.pending || []).length;
-    } catch(e) { return; }
+    const cached = cacheGet('pending');
+    if (cached) { count = cached.length; }
+    else {
+      try {
+        const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getPending' }) });
+        const data = await resp.json();
+        const list = data.pending || [];
+        cacheSet('pending', list);
+        count = list.length;
+      } catch(e) { return; }
+    }
   }
   document.getElementById('pending-count').textContent = count;
 }
 
 // ── Load log ──────────────────────────────────────────────────
-async function loadLogs() {
+function applyLogsFilter(loads) {
   const driver = document.getElementById('filter-driver').value;
   const crop = document.getElementById('filter-crop').value;
   const lot = document.getElementById('filter-lot').value;
+  renderLogs(loads.filter(l => {
+    if (driver && !normStr(l['Driver']).includes(normStr(driver))) return false;
+    if (crop && !normStr(l['Crop']).includes(normStr(crop))) return false;
+    if (lot && !normStr(l['Field / Lot']).includes(normStr(lot))) return false;
+    return true;
+  }));
+}
+
+async function loadLogs() {
+  const cached = cacheGet('logs');
+  if (cached) {
+    applyLogsFilter(cached);
+    fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getLogs' }) })
+      .then(r => r.json())
+      .then(data => { const loads = data.loads || []; cacheSet('logs', loads); applyLogsFilter(loads); })
+      .catch(() => {});
+    return;
+  }
   document.getElementById('log-list').innerHTML = '<div class="empty">Loading...</div>';
   try {
-    const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getLogs', driver, crop, lot }) });
+    const resp = await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'getLogs' }) });
     const data = await resp.json();
-    renderLogs(data.loads || []);
+    const loads = data.loads || [];
+    cacheSet('logs', loads);
+    applyLogsFilter(loads);
   } catch(e) {
     document.getElementById('log-list').innerHTML = '<div class="empty">Error loading</div>';
   }
@@ -617,14 +756,16 @@ function renderLogs(loads) {
     const conf = l['Match Confidence'] || 'low';
     const encoded = encodeURIComponent(JSON.stringify(l));
     return '<div class="load-card" onclick=\'showDetail(JSON.parse(decodeURIComponent("' + encoded + '")), "log")\'>' +
-      '<div class="load-card-top"><div>' +
-      '<div class="load-card-id">#' + (l['Field Ticket #'] || l['Load #']) + '</div>' +
-      '<div class="load-card-meta">' + (l['Field Date'] || '—') + ' · ' + (l['Driver'] || '—') + ' · ' + (l['Field / Lot'] || '—') + '</div>' +
-      '</div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
       '<span class="badge badge-' + conf + '">' + conf + '</span>' +
       (l['Is Split'] === 'Yes' ? '<span class="badge badge-split">⚡ Split</span>' : '') +
       (l['Reviewed'] === 'Yes' ? '<span class="badge" style="background:var(--green-bg);color:var(--green)">Reviewed</span>' : '') +
-      '</div></div>' +
+      '</div>' +
+      '<button class="btn-delete" onclick="event.stopPropagation();deleteLogEntry(this,' + l._row + ')">&#215;</button>' +
+      '</div>' +
+      '<div class="load-card-id">#' + (l['Field Ticket #'] || l['Load #']) + '</div>' +
+      '<div class="load-card-meta">' + formatDate(l['Field Date']) + ' · ' + (l['Driver'] || '—') + ' · ' + (l['Field / Lot'] || '—') + '</div>' +
       '<div class="load-card-weights">' +
       '<div class="load-card-weight"><span>Net </span>' + (l['Net Weight'] || '—') + '</div>' +
       '<div class="load-card-weight"><span>Moist </span>' + (l['Moisture'] || '—') + '</div>' +
@@ -637,8 +778,8 @@ function renderLogs(loads) {
 function renderDetail(load, type) {
   const fields = [
     ['Field Ticket #', load['Field Ticket #']], ['Delivered Ticket #', load['Delivered Ticket #']],
-    ['Contract #', load['Contract #']], ['Field Date', load['Field Date']],
-    ['Delivered Date', load['Delivered Date']], ['Driver', load['Driver']],
+    ['Contract #', load['Contract #']], ['Field Date', formatDate(load['Field Date'])],
+    ['Delivered Date', formatDate(load['Delivered Date'])], ['Driver', load['Driver']],
     ['Truck Owner', load['Truck Owner']], ['Crop', load['Crop']],
     ['Farm', load['Farm']], ['Field / Lot', load['Field / Lot']],
     ['Delivered Lot', load['Delivered Lot']], ['Producer', load['Producer']],
@@ -662,14 +803,61 @@ function renderDetail(load, type) {
     '<div class="card">' +
     fields.filter(([,v]) => v).map(([l,v]) => '<div class="detail-field"><label>' + l + '</label><value>' + v + '</value></div>').join('') +
     '</div>' +
-    '<div class="btn-row"><button class="btn btn-sm" onclick="markReviewed(' + load._row + ')">Mark reviewed</button></div>';
+    '<div class="btn-row"><button class="btn btn-sm" onclick="markReviewed(this,' + load._row + ')">Mark reviewed</button></div>';
 }
 
-async function markReviewed(row) {
+async function markReviewed(btn, row) {
+  btn.disabled = true; btn.textContent = 'Marking...';
   try {
     await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'markReviewed', row }) });
+    btn.textContent = '✓ Reviewed';
     toast('Marked as reviewed');
-  } catch(e) { toast('Error: ' + e.message); }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Mark reviewed';
+    toast('Error: ' + e.message);
+  }
+}
+
+async function deletePendingEntry(btn, row) {
+  if (!confirm('Delete this pending field ticket?')) return;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'deletePending', row }) });
+    cacheDel('pending');
+    loadPending();
+    toast('Deleted');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '×';
+    toast('Error: ' + e.message);
+  }
+}
+
+async function deleteDeliveredPendingEntry(btn, row) {
+  if (!confirm('Delete this pending delivered ticket?')) return;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'deleteDeliveredPending', row }) });
+    cacheDel('dpending');
+    loadDeliveredPending();
+    toast('Deleted');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '×';
+    toast('Error: ' + e.message);
+  }
+}
+
+async function deleteLogEntry(btn, row) {
+  if (!confirm('Delete this load record?')) return;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch(API, { method: 'POST', body: JSON.stringify({ action: 'deleteLog', row }) });
+    cacheDel('logs');
+    loadLogs();
+    toast('Deleted');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '×';
+    toast('Error: ' + e.message);
+  }
 }
 
 function fi(label, val) {
@@ -684,6 +872,7 @@ function toast(msg) {
   setTimeout(() => el.classList.remove('show'), 2800);
 }
 
+fetch(API, { method: 'POST', body: JSON.stringify({ action: 'init' }) });
 updatePendingCount();
 updateDeliveredPendingCount();
 </script>
