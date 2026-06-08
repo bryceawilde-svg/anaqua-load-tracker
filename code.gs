@@ -256,6 +256,8 @@ function captureFieldTicket(payload) {
 
   const split = extractSplitInfo(f.remarks || '');
 
+  f.farm         = 'Anaqua Farms';
+  f.harvested_by = 'Self';
   if (f.driver)     f.driver     = normalizeName(f.driver,     masterLists.drivers);
   if (f.deliver_to) f.deliver_to = normalizeBuyer(f.deliver_to, masterLists.buyers);
 
