@@ -2,7 +2,7 @@
 // Fuzzy matching + correct buyer extraction
 
 const SHEET_ID = '12cNhf1pJVf48H82zGv2eis08sN32MAdmk1Qn4jL48Xs';
-const ANTHROPIC_API_KEY = 'PropertiesService.getScriptProperties().getProperty(ANTHROPIC_API_KEY_PLACEHOLDER)';
+const ANTHROPIC_API_KEY = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
 
 const TABS = { PENDING: 'Pending Field Tickets', DELIVERED_PENDING: 'Pending Delivered Tickets', LOG: 'Load Log', MASTER_LISTS: 'Master Lists' };
 
@@ -234,11 +234,15 @@ function scoreDeliveredMatch(fieldTicket, deliveredPending) {
 
 function captureFieldTicket(payload) {
   const { imageB64, mime } = payload;
+  const masterLists = getMasterLists();
+  const buyerList = masterLists.buyers.length ? 'Known buyers (match deliver_to to the closest one): ' + masterLists.buyers.join(', ') + '. ' : '';
   const prompt = 'You are reading a handwritten FIELD TICKET from Anaqua Farms, Willacy County, Texas. ' +
     'Crop normalization: milo/yellow sorghum/sorghum/gr sorghum/milo maize = "Grain Sorghum". Yellow corn/yell corn/corn = "Corn". ' +
     'Return ONLY raw JSON, no markdown, no backticks. ' +
     'Structure: {"ticket_number":"","date":"","producer":"","deliver_to":"","field_lot":"","crop":"","farm":"","harvested_by":"","truck_owner":"","driver":"","remarks":""} ' +
     'deliver_to is the BUYER — the grain elevator or gin receiving the load (e.g. Texas Valley Grain, Willamar, Chapa). ' +
+    buyerList +
+    'If the handwritten buyer name resembles one of the known buyers above, use that exact known buyer name. ' +
     'Anaqua Farms is the producer, never the buyer. Capture remarks exactly as written. ' +
     'Field IDs on these tickets can vary in format. They may be a 3 or 4 digit number alone, a number followed by a location name, a number followed by a location name and letter/number suffix, or two numbers separated by a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully and completely — do not drop or add digits. If a digit is unclear, make your best guess based on the surrounding context and handwriting style. Always return something rather than null for field IDs. ' +
     'Use null for unreadable fields.';
@@ -252,7 +256,6 @@ function captureFieldTicket(payload) {
 
   const split = extractSplitInfo(f.remarks || '');
 
-  const masterLists = getMasterLists();
   if (f.driver)     f.driver     = normalizeName(f.driver,     masterLists.drivers);
   if (f.deliver_to) f.deliver_to = normalizeBuyer(f.deliver_to, masterLists.buyers);
 
