@@ -237,15 +237,24 @@ function captureFieldTicket(payload) {
   const masterLists = getMasterLists();
   const buyerList = masterLists.buyers.length ? 'Known buyers (match deliver_to to the closest one): ' + masterLists.buyers.join(', ') + '. ' : '';
   const prompt = 'You are reading a handwritten FIELD TICKET from Anaqua Farms, Willacy County, Texas. ' +
+    'The ticket has printed labels with handwritten values filled in next to or below each label. ' +
+    'Read each label carefully and extract the handwritten value next to it. Labels you will see: ' +
+    '"Date" (handwritten date), "Producer" (always Anaqua Farms), "Deliver To" (handwritten buyer name), ' +
+    '"Field ID #" or "Field ID" (handwritten field/lot number), "Crop" (handwritten crop name), ' +
+    '"Harvested By" (always Self), "Truck Owner" (handwritten), "Driver" (handwritten), ' +
+    '"Ticket #" or ticket number printed/stamped on the ticket, "Remarks" (any extra handwritten notes). ' +
     'Crop normalization: milo/yellow sorghum/sorghum/gr sorghum/milo maize = "Grain Sorghum". Yellow corn/yell corn/corn = "Corn". ' +
     'Return ONLY raw JSON, no markdown, no backticks. ' +
     'Structure: {"ticket_number":"","date":"","producer":"","deliver_to":"","field_lot":"","crop":"","farm":"","harvested_by":"","truck_owner":"","driver":"","remarks":""} ' +
-    'deliver_to is the BUYER — the grain elevator or gin receiving the load (e.g. Texas Valley Grain, Willamar, Chapa). ' +
+    'deliver_to is the BUYER — the grain elevator or gin receiving the load. ' +
     buyerList +
     'If the handwritten buyer name resembles one of the known buyers above, use that exact known buyer name. ' +
     'Anaqua Farms is the producer, never the buyer. Capture remarks exactly as written. ' +
-    'Field IDs on these tickets can vary in format. They may be a 3 or 4 digit number alone, a number followed by a location name, a number followed by a location name and letter/number suffix, or two numbers separated by a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully and completely — do not drop or add digits. If a digit is unclear, make your best guess based on the surrounding context and handwriting style. Always return something rather than null for field IDs. ' +
-    'Use null for unreadable fields.';
+    'Field IDs can vary: 3-4 digit number alone, number + location name, number + location + suffix, or two numbers with a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully — do not drop or add digits. Always return something for field IDs, never null. ' +
+    'For the ticket number: look for a stamped or printed number on the ticket, often in a box or near the top. ' +
+    'For the date: it is handwritten next to the "Date:" label, read it carefully (format may be M/D/YY or M/D/YYYY). ' +
+    'For the driver: look for a handwritten name on the "Driver" line — it is a person\'s name, not a company. ' +
+    'Use null only for fields that are truly blank or completely unreadable.';
 
   const f = JSON.parse(callClaude([
     { type: 'image', source: { type: 'base64', media_type: mime || 'image/jpeg', data: imageB64 } },
