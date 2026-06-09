@@ -94,6 +94,22 @@ function netWeightFlag(val) {
   return null;
 }
 
+function bushelWeightFlag(val) {
+  if (!val) return null;
+  const n = parseFloat(String(val).replace(/,/g, ''));
+  if (!isNaN(n) && (n < 50 || n > 65))
+    return 'Bushel Weight (' + val + ') is outside expected range (50.0–65.0); verify against delivered ticket';
+  return null;
+}
+
+function moistureFlag(val) {
+  if (!val) return null;
+  const n = parseFloat(String(val).replace(/,/g, ''));
+  if (!isNaN(n) && (n < 10 || n > 25))
+    return 'Moisture (' + val + ') is outside expected range (10.0–25.0); verify against delivered ticket';
+  return null;
+}
+
 function extractSplitInfo(remarks) {
   if (!remarks) return { isSplit: false, splitDescription: '' };
   const idx = remarks.toLowerCase().indexOf('split');
@@ -437,6 +453,10 @@ function matchDeliveredTicket(payload) {
 
   const nwFlag = netWeightFlag(d.net_weight);
   if (nwFlag) d.netWeightWarning = nwFlag;
+  const bwFlag = bushelWeightFlag(d.bushel_weight);
+  if (bwFlag) d.bushelWeightWarning = bwFlag;
+  const mFlag = moistureFlag(d.moisture);
+  if (mFlag) d.moistureWarning = mFlag;
 
   const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
   const lastRow = pendingSheet.getLastRow();
@@ -457,7 +477,8 @@ function matchDeliveredTicket(payload) {
     const ticketMatch = best.matched.includes('Ticket #');
     const otherMatches = best.matched.filter(m => m !== 'Ticket #').length;
     if (ticketMatch || otherMatches >= 3) {
-      const autoFlags = d.netWeightWarning ? [d.netWeightWarning, ...best.flags] : best.flags;
+      const dataFlags = [d.netWeightWarning, d.bushelWeightWarning, d.moistureWarning].filter(Boolean);
+      const autoFlags = dataFlags.length ? [...dataFlags, ...best.flags] : best.flags;
       const loadRow = writeMatchedLoad(best.pending, d, best.matched, autoFlags, best.score);
       deletePendingRow(pendingSheet, best.pending._row);
       return { success: true, delivered: d, matchResult: 'auto', score: best.score, matched: best.matched, flags: autoFlags, field: best.pending, loadRow };
@@ -502,7 +523,10 @@ function manualMatch(payload) {
   PENDING_HEADERS.forEach((h, i) => { pending[h] = rowData[i]; });
   pending._row = pendingRow;
   const nwFlag = netWeightFlag(deliveredData.net_weight);
-  const allFlags = [...(flags || ['Manually matched']), ...(nwFlag ? [nwFlag] : [])];
+  const bwFlag = bushelWeightFlag(deliveredData.bushel_weight);
+  const mFlag  = moistureFlag(deliveredData.moisture);
+  const dataFlags = [nwFlag, bwFlag, mFlag].filter(Boolean);
+  const allFlags = [...(flags || ['Manually matched']), ...dataFlags];
   const loadRow = writeMatchedLoad(pending, deliveredData, matchedFields || [], allFlags, 0);
   deletePendingRow(pendingSheet, pendingRow);
   return { success: true, loadRow };
