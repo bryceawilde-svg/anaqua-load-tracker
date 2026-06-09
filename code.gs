@@ -86,30 +86,6 @@ function callClaudeModel(model, parts) {
   return result.content.map(b => b.text || '').join('').replace(/```json|```/g, '').trim();
 }
 
-function netWeightFlag(val) {
-  if (!val) return null;
-  const n = parseFloat(String(val).replace(/,/g, ''));
-  if (!isNaN(n) && n > 0 && n < 1000)
-    return 'Net Weight (' + val + ') appears low — expected tens of thousands of lbs; verify against delivered ticket';
-  return null;
-}
-
-function bushelWeightFlag(val) {
-  if (!val) return null;
-  const n = parseFloat(String(val).replace(/,/g, ''));
-  if (!isNaN(n) && (n < 50 || n > 65))
-    return 'Bushel Weight (' + val + ') is outside expected range (50.0–65.0); verify against delivered ticket';
-  return null;
-}
-
-function moistureFlag(val) {
-  if (!val) return null;
-  const n = parseFloat(String(val).replace(/,/g, ''));
-  if (!isNaN(n) && (n < 10 || n > 25))
-    return 'Moisture (' + val + ') is outside expected range (10.0–25.0); verify against delivered ticket';
-  return null;
-}
-
 function extractSplitInfo(remarks) {
   if (!remarks) return { isSplit: false, splitDescription: '' };
   const idx = remarks.toLowerCase().indexOf('split');
@@ -436,7 +412,9 @@ function matchDeliveredTicket(payload) {
     'For Dirt-Tech Farms / DIRT-TECH FARMS, LLC tickets: buyer = "Dirt-Tech Farms" (the elevator name in the top-left Elevator Section). field_lot = the value under "Lot #". crop = the value under "Product". field_ticket_ref = the value under "OrgTicket". driver = the name in the Transport Section (e.g. BUBBA). ticket_number = the number in the "Ticket In" box. bushel_weight = the value in the "Test Weight" box. ' +
     'Field IDs on these tickets can vary in format. They may be a 3 or 4 digit number alone, a number followed by a location name, a number followed by a location name and letter/number suffix, or two numbers separated by a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully and completely — do not drop or add digits. If a digit is unclear, make your best guess based on the surrounding context and handwriting style. Always return something rather than null for field IDs. ' +
     'For field_ticket_ref: find any of these — ANAQ followed by digits (e.g. ANAQ4520), or a value next to Ref:, ORG Ticket, Field Ticket, or Load #. Capture full raw text. ' +
-    'For bushel_weight: look for a value labeled "Test Weight", "Bushel Weight", "Lbs/Bu", "TW", or "Test Wt". These are typically a number between 45 and 65. ' +
+    'For gross_weight, tare_weight, and net_weight: these are weights in pounds — large numbers. Gross (truck + grain) is typically 55,000–85,000 lbs, tare (truck alone) 25,000–35,000 lbs, and net (grain only) 30,000–65,000 lbs. They are often printed with a comma separator (e.g. "47,320"). Read all digits carefully and do not mistake a comma for a decimal point. ' +
+    'For moisture: a percentage, typically between 10.0 and 25.0. ' +
+    'For bushel_weight: look for a value labeled "Test Weight", "Bushel Weight", "Lbs/Bu", "TW", or "Test Wt". Typically between 50.0 and 65.0. ' +
     'For driver: look for a person\'s name labeled as driver, hauler, or trucker. Never use weight labels (Tare, Gross, Net, WT), dates, ticket numbers, or field labels as the driver name. Use null if no clear driver name is present. ' +
     'For the date: today is ' + new Date().toLocaleDateString('en-US') + '. This ticket was issued very recently — the date should be within the last 1–2 days. Use this as context if any part of the date is unclear or the year/month is ambiguous. ' +
     'Use null for unreadable fields. Never guess numbers.';
@@ -451,13 +429,6 @@ function matchDeliveredTicket(payload) {
   const masterLists = getMasterLists();
   if (d.driver) d.driver = normalizeName(d.driver, masterLists.drivers);
   if (d.buyer)  d.buyer  = normalizeBuyer(d.buyer, masterLists.buyers);
-
-  const nwFlag = netWeightFlag(d.net_weight);
-  if (nwFlag) d.netWeightWarning = nwFlag;
-  const bwFlag = bushelWeightFlag(d.bushel_weight);
-  if (bwFlag) d.bushelWeightWarning = bwFlag;
-  const mFlag = moistureFlag(d.moisture);
-  if (mFlag) d.moistureWarning = mFlag;
 
   const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
   const lastRow = pendingSheet.getLastRow();
@@ -478,11 +449,9 @@ function matchDeliveredTicket(payload) {
     const ticketMatch = best.matched.includes('Ticket #');
     const otherMatches = best.matched.filter(m => m !== 'Ticket #').length;
     if (ticketMatch || otherMatches >= 3) {
-      const dataFlags = [d.netWeightWarning, d.bushelWeightWarning, d.moistureWarning].filter(Boolean);
-      const autoFlags = dataFlags.length ? [...dataFlags, ...best.flags] : best.flags;
-      const loadRow = writeMatchedLoad(best.pending, d, best.matched, autoFlags, best.score);
+      const loadRow = writeMatchedLoad(best.pending, d, best.matched, best.flags, best.score);
       deletePendingRow(pendingSheet, best.pending._row);
-      return { success: true, delivered: d, matchResult: 'auto', score: best.score, matched: best.matched, flags: autoFlags, field: best.pending, loadRow };
+      return { success: true, delivered: d, matchResult: 'auto', score: best.score, matched: best.matched, flags: best.flags, field: best.pending, loadRow };
     }
   }
 
@@ -523,12 +492,7 @@ function manualMatch(payload) {
   const pending = {};
   PENDING_HEADERS.forEach((h, i) => { pending[h] = rowData[i]; });
   pending._row = pendingRow;
-  const nwFlag = netWeightFlag(deliveredData.net_weight);
-  const bwFlag = bushelWeightFlag(deliveredData.bushel_weight);
-  const mFlag  = moistureFlag(deliveredData.moisture);
-  const dataFlags = [nwFlag, bwFlag, mFlag].filter(Boolean);
-  const allFlags = [...(flags || ['Manually matched']), ...dataFlags];
-  const loadRow = writeMatchedLoad(pending, deliveredData, matchedFields || [], allFlags, 0);
+  const loadRow = writeMatchedLoad(pending, deliveredData, matchedFields || [], flags || ['Manually matched'], 0);
   deletePendingRow(pendingSheet, pendingRow);
   return { success: true, loadRow };
 }

@@ -425,9 +425,9 @@ function renderDeliveredResult(data) {
       (data.flags && data.flags.length ? '<div class="section-label" style="color:var(--amber)">Notes</div>' + data.flags.map(f=>'<div class="flag-item" style="color:var(--amber)">⚠ '+f+'</div>').join('') : '') +
       '<div class="section-label">Delivered weight</div>' +
       '<div class="field-grid">' +
-      fi('Net weight', warnIfLowWeight(d.net_weight)) + fi('Moisture', warnIfOutOfRange(d.moisture, 10, 25)) +
+      fi('Net weight', d.net_weight) + fi('Moisture', d.moisture) +
       fi('Gross', d.gross_weight) + fi('Tare', d.tare_weight) +
-      fi('Bushel wt', warnIfOutOfRange(d.bushel_weight, 50, 65)) +
+      fi('Bushel wt', d.bushel_weight) +
       '</div>' +
       '<div class="section-label">Matched to field ticket</div>' +
       '<div class="field-grid">' +
@@ -452,12 +452,9 @@ function renderDeliveredResult(data) {
       '<div class="section-label">Delivered ticket read</div>' +
       '<div class="field-grid">' +
       fi('Buyer', d.buyer) + fi('Driver', d.driver) +
-      fi('Net weight', warnIfLowWeight(d.net_weight)) + fi('Date', formatDate(d.date)) +
+      fi('Net weight', d.net_weight) + fi('Date', formatDate(d.date)) +
       fi('Field ref', d.field_ticket_ref) + fi('Field lot', d.field_lot) +
-      fi('Moisture', warnIfOutOfRange(d.moisture, 10, 25)) + fi('Bushel wt', warnIfOutOfRange(d.bushel_weight, 50, 65)) +
-      '</div>' +
-      [d.netWeightWarning, d.bushelWeightWarning, d.moistureWarning].filter(Boolean).map(w => '<div class="flag-item" style="color:var(--amber);padding:3px 0">⚠ ' + w + '</div>').join('') +
-      '</div>' +
+      '</div></div>' +
       (candidates.length ?
         '<div class="section-label">Select matching field ticket</div>' +
         candidates.map(c => candidateCard(c)).join('') :
@@ -592,7 +589,7 @@ function renderDeliveredPending(list) {
     '</div>' +
     '<div class="ticket-card-id">Delivered Ticket #' + (p['Ticket #'] || '?') + '</div>' +
     '<div class="ticket-card-meta">' + formatDate(p['Date']) + ' &middot; ' + (p['Driver'] || '?') + ' &middot; ' + (p['Buyer'] || '?') + '</div>' +
-    '<div class="ticket-card-meta">Net: ' + warnIfLowWeight(p['Net Weight'] || '?') + ' &middot; Field Lot: ' + (p['Field Lot'] || '?') + '</div>' +
+    '<div class="ticket-card-meta">Net: ' + (p['Net Weight'] || '?') + ' &middot; Field Lot: ' + (p['Field Lot'] || '?') + '</div>' +
     (p['Field Ticket Ref'] ? '<div class="ticket-card-meta">Ref: ' + p['Field Ticket Ref'] + '</div>' : '') +
     '</div>'
   ).join('');
@@ -772,7 +769,7 @@ function renderLogs(loads) {
       '<div class="load-card-meta">' + formatDate(l['Field Date']) + ' · ' + (l['Driver'] || '—') + ' · ' + (l['Field / Lot'] || '—') + '</div>' +
       '<div class="load-card-weights">' +
       '<div class="load-card-weight"><span>Net </span>' + warnIfLowWeight(l['Net Weight']) + '</div>' +
-      '<div class="load-card-weight"><span>Moist </span>' + warnIfOutOfRange(l['Moisture'], 10, 25) + '</div>' +
+      '<div class="load-card-weight"><span>Moist </span>' + (l['Moisture'] || '—') + '</div>' +
       '<div class="load-card-weight"><span>Buyer </span>' + (l['Buyer'] || '—') + '</div>' +
       '</div></div>';
   }).join('');
@@ -805,13 +802,7 @@ function renderDetail(load, type) {
     (load['Is Split'] === 'Yes' ? '<div class="split-banner" style="margin-bottom:12px"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (load['Split Description'] || '') + '</div></div>' : '') +
     (flags.length ? '<div class="card" style="border-color:var(--amber);margin-bottom:12px">' + flags.map(f => '<div class="flag-item" style="color:var(--amber)">⚠ ' + f + '</div>').join('') + '</div>' : '') +
     '<div class="card">' +
-    fields.filter(([,v]) => v).map(([lbl,v]) => {
-      let dv = v;
-      if (lbl === 'Net Weight') dv = warnIfLowWeight(v);
-      else if (lbl === 'Bushel Weight') dv = warnIfOutOfRange(v, 50, 65);
-      else if (lbl === 'Moisture') dv = warnIfOutOfRange(v, 10, 25);
-      return '<div class="detail-field"><label>' + lbl + '</label><value>' + dv + '</value></div>';
-    }).join('') +
+    fields.filter(([,v]) => v).map(([l,v]) => '<div class="detail-field"><label>' + l + '</label><value>' + v + '</value></div>').join('') +
     '</div>' +
     '<div class="btn-row"><button class="btn btn-sm" onclick="markReviewed(this,' + load._row + ')">Mark reviewed</button></div>';
 }
@@ -875,21 +866,6 @@ function fi(label, val) {
     '<div class="field-item-val">' + (val || '<span style="color:var(--text-3)">—</span>') + '</div></div>';
 }
 
-function warnIfLowWeight(val) {
-  if (!val) return '<span style="color:var(--text-3)">—</span>';
-  const n = parseFloat(String(val).replace(/,/g, ''));
-  if (!isNaN(n) && n > 0 && n < 1000)
-    return '<span style="color:var(--amber);font-weight:600">' + val + ' ⚠</span>';
-  return val;
-}
-
-function warnIfOutOfRange(val, min, max) {
-  if (!val) return '<span style="color:var(--text-3)">—</span>';
-  const n = parseFloat(String(val).replace(/,/g, ''));
-  if (!isNaN(n) && (n < min || n > max))
-    return '<span style="color:var(--amber);font-weight:600">' + val + ' ⚠</span>';
-  return val;
-}
 
 function toast(msg) {
   const el = document.getElementById('toast');
