@@ -248,7 +248,9 @@ function captureFieldTicket(payload) {
     'Structure: {"ticket_number":"","date":"","producer":"","deliver_to":"","field_lot":"","crop":"","farm":"","harvested_by":"","truck_owner":"","driver":"","remarks":""} ' +
     'deliver_to is the BUYER — the grain elevator or gin receiving the load. ' +
     buyerList +
-    'If the handwritten buyer name resembles one of the known buyers above, use that exact known buyer name. ' +
+    (masterLists.buyers.length
+      ? 'IMPORTANT: deliver_to MUST be one of the known buyers listed above — use that exact name. If the handwritten name does not clearly match any of them, return null for deliver_to. Do not invent or guess a buyer name that is not on the list. '
+      : 'deliver_to should be the grain elevator or gin name written on the ticket. ') +
     'Anaqua Farms is the producer, never the buyer. Capture remarks exactly as written. ' +
     'Field IDs can vary: 3-4 digit number alone, number + location name, number + location + suffix, or two numbers with a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully — do not drop or add digits. Always return something for field IDs, never null. ' +
     'For the ticket number: look for a stamped or printed number on the ticket, often in a box or near the top. ' +
@@ -267,8 +269,12 @@ function captureFieldTicket(payload) {
 
   f.farm         = 'Anaqua Farms';
   f.harvested_by = 'Self';
-  if (f.driver)     f.driver     = normalizeName(f.driver,     masterLists.drivers);
-  if (f.deliver_to) f.deliver_to = normalizeBuyer(f.deliver_to, masterLists.buyers);
+  if (f.driver) f.driver = normalizeName(f.driver, masterLists.drivers);
+  if (f.deliver_to && masterLists.buyers.length) {
+    const normalized = normalizeBuyer(f.deliver_to, masterLists.buyers);
+    // Only keep the value if it actually matched a known buyer
+    f.deliver_to = masterLists.buyers.some(b => norm(b) === norm(normalized)) ? normalized : '';
+  }
 
   // Duplicate check — reject if ticket number already exists in pending or log
   if (f.ticket_number) {
