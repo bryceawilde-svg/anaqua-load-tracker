@@ -294,14 +294,15 @@ function captureFieldTicket(payload) {
 
   if (f.ticket_number) {
     // Check by ticket number
+    const dupNum = String(f.ticket_number).trim().replace(/^0+/, '');
     if (pendingLastDup > 1) {
       const existing = pendingSheetDup.getRange(2, 1, pendingLastDup - 1, 1).getValues().flat();
-      if (existing.some(t => String(t).trim() === String(f.ticket_number).trim()))
+      if (existing.some(t => String(t).trim().replace(/^0+/, '') === dupNum))
         return { success: false, duplicate: true, message: 'Ticket #' + f.ticket_number + ' is already in Pending Field Tickets.' };
     }
     if (logLastDup > 1) {
       const logTickets = logSheetDup.getRange(2, 5, logLastDup - 1, 1).getValues().flat();
-      if (logTickets.some(t => String(t).trim() === String(f.ticket_number).trim()))
+      if (logTickets.some(t => String(t).trim().replace(/^0+/, '') === dupNum))
         return { success: false, duplicate: true, message: 'Ticket #' + f.ticket_number + ' has already been logged.' };
     }
   }
