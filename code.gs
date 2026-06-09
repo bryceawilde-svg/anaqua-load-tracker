@@ -150,6 +150,27 @@ function parseDate(val) {
   return null;
 }
 
+function parseDateObj(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  const s = val.toString().trim();
+  const mo = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+  const named = s.match(/([a-zA-Z]{3,})\s+(\d{1,2})[,\s]+(\d{2,4})/);
+  if (named) {
+    const m = mo[named[1].toLowerCase().slice(0, 3)];
+    if (m) {
+      let y = parseInt(named[3], 10); if (y < 100) y += 2000;
+      return new Date(Date.UTC(y, m - 1, parseInt(named[2], 10)));
+    }
+  }
+  const num = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (num) {
+    let y = parseInt(num[3], 10); if (y < 100) y += 2000;
+    return new Date(Date.UTC(y, parseInt(num[1], 10) - 1, parseInt(num[2], 10)));
+  }
+  return null;
+}
+
 function stripNoise(str) {
   return norm(str)
     .replace(/\b(cotton|grain|co|llc|inc|ltd|farms|farm|el|de|la|and|progresso|valley|elevator|gin|milling)\b/g, '')
@@ -219,7 +240,16 @@ function scoreMatch(pending, delivered) {
 
   // 5. Date — normalized across format variations (06/10/2025, 6-10-25, June 10 2025, etc.)
   const pdate = parseDate(pending['Date']), ddate = parseDate(delivered.date);
-  if (pdate && ddate && pdate === ddate) { score++; matched.push('Date'); }
+  if (pdate && ddate) {
+    if (pdate === ddate) { score++; matched.push('Date'); }
+    else {
+      const pd = parseDateObj(pending['Date']), dd = parseDateObj(delivered.date);
+      if (pd && dd) {
+        const diff = Math.round(Math.abs(pd - dd) / 86400000);
+        if (diff > 3) flags.push('Date gap: field ' + pending['Date'] + ' vs delivered ' + delivered.date + ' (' + diff + ' day' + (diff === 1 ? '' : 's') + ' apart)');
+      }
+    }
+  }
 
   return { score, matched, flags };
 }
