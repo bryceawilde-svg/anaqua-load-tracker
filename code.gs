@@ -249,7 +249,7 @@ function captureFieldTicket(payload) {
     'deliver_to is the BUYER — the grain elevator or gin receiving the load. ' +
     buyerList +
     (masterLists.buyers.length
-      ? 'IMPORTANT: deliver_to MUST be one of the known buyers listed above — use that exact name. If the handwritten name does not clearly match any of them, return null for deliver_to. Do not invent or guess a buyer name that is not on the list. '
+      ? 'For deliver_to: pick the closest matching buyer from the known buyers list above and use that exact name. Even if the handwriting is messy or partially misread, choose the best match from the list. '
       : 'deliver_to should be the grain elevator or gin name written on the ticket. ') +
     'Anaqua Farms is the producer, never the buyer. Capture remarks exactly as written. ' +
     'Field IDs can vary: 3-4 digit number alone, number + location name, number + location + suffix, or two numbers with a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully — do not drop or add digits. Always return something for field IDs, never null. ' +
@@ -272,7 +272,8 @@ function captureFieldTicket(payload) {
   if (f.driver) f.driver = normalizeName(f.driver, masterLists.drivers);
   if (f.deliver_to && masterLists.buyers.length) {
     const normalized = normalizeBuyer(f.deliver_to, masterLists.buyers);
-    // Only keep the value if it actually matched a known buyer
+    // If normalizeBuyer found a match (returned a known buyer), use it.
+    // If it returned the original unrecognized value, clear it.
     f.deliver_to = masterLists.buyers.some(b => norm(b) === norm(normalized)) ? normalized : '';
   }
 
@@ -576,14 +577,19 @@ function normalizeBuyer(raw, buyerList) {
   const n = norm(raw);
   for (const name of buyerList) { if (norm(name) === n) return name; }
   for (const name of buyerList) { if (fuzzyBuyer(n, norm(name))) return name; }
-  // Levenshtein on noise-stripped versions — short codes (≤5 chars) allow 2 edits to catch WNCW→WNGU
+  // Levenshtein on noise-stripped versions — use a generous tolerance for buyers
+  // since OCR can badly mangle short words (e.g. "Dirt Bedi" → "Dirt-Tech Farms")
   const sn = stripNoise(raw);
   if (sn) {
+    let bestName = null, bestDist = Infinity;
     for (const name of buyerList) {
       const snn = stripNoise(name);
       if (!snn) continue;
-      if (levenshtein(sn, snn) <= ocrTolerance(Math.min(sn.length, snn.length))) return name;
+      const dist = levenshtein(sn, snn);
+      const tol = Math.max(2, Math.floor(Math.min(sn.length, snn.length) / 3));
+      if (dist <= tol && dist < bestDist) { bestDist = dist; bestName = name; }
     }
+    if (bestName) return bestName;
   }
   return raw;
 }
