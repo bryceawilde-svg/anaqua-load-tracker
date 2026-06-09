@@ -657,6 +657,30 @@ function initSheets() {
   return { success: true };
 }
 
+function testDuplicateCheck() {
+  const ticketNum = '4902'; // Change this to a ticket number that IS in your sheet
+  const dupNum = String(ticketNum).trim().replace(/^0+/, '');
+
+  const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
+  const pendingLast = pendingSheet.getLastRow();
+  Logger.log('Pending rows: ' + (pendingLast - 1));
+  if (pendingLast > 1) {
+    const existing = pendingSheet.getRange(2, 1, pendingLast - 1, 1).getValues().flat();
+    Logger.log('Pending ticket numbers: ' + JSON.stringify(existing.map(t => String(t).trim())));
+    Logger.log('Looking for: "' + dupNum + '"');
+    Logger.log('Match found in pending: ' + existing.some(t => String(t).trim().replace(/^0+/, '') === dupNum));
+  }
+
+  const logSheet = getOrCreateTab(TABS.LOG, LOG_HEADERS);
+  const logLast = logSheet.getLastRow();
+  Logger.log('Log rows: ' + (logLast - 1));
+  if (logLast > 1) {
+    const logTickets = logSheet.getRange(2, 5, logLast - 1, 1).getValues().flat();
+    Logger.log('Log field ticket numbers: ' + JSON.stringify(logTickets.map(t => String(t).trim())));
+    Logger.log('Match found in log: ' + logTickets.some(t => String(t).trim().replace(/^0+/, '') === dupNum));
+  }
+}
+
 function testClaude() {
   const r = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
