@@ -62,8 +62,16 @@ function respond(data) {
 }
 
 function callClaude(parts) {
+  return callClaudeModel('claude-haiku-4-5-20251001', parts);
+}
+
+function callClaudeSonnet(parts) {
+  return callClaudeModel('claude-sonnet-4-5', parts);
+}
+
+function callClaudeModel(model, parts) {
   const requestBody = {
-    model: 'claude-haiku-4-5-20251001',
+    model: model,
     max_tokens: 1024,
     messages: [{ role: 'user', content: parts }]
   };
@@ -253,12 +261,13 @@ function captureFieldTicket(payload) {
       : 'deliver_to should be the grain elevator or gin name written on the ticket. ') +
     'Anaqua Farms is the producer, never the buyer. Capture remarks exactly as written. ' +
     'Field IDs can vary: 3-4 digit number alone, number + location name, number + location + suffix, or two numbers with a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully — do not drop or add digits. Always return something for field IDs, never null. ' +
+    'Common handwriting misreads to watch for in field IDs: 8 can look like 6, A can look like 4, 1 can look like 7, 2 can look like Z, B can look like 8. Look at the full context of the field ID and choose the most consistent interpretation. ' +
     'For the ticket number: look for a stamped or printed number on the ticket, often in a box or near the top. ' +
     'For the date: it is handwritten next to the "Date:" label, read it carefully (format may be M/D/YY or M/D/YYYY). ' +
     'For the driver: look for a handwritten name on the "Driver" line — it is a person\'s name, not a company. ' +
     'Use null only for fields that are truly blank or completely unreadable.';
 
-  const f = JSON.parse(callClaude([
+  const f = JSON.parse(callClaudeSonnet([
     { type: 'image', source: { type: 'base64', media_type: mime || 'image/jpeg', data: imageB64 } },
     { type: 'text', text: prompt }
   ]));
