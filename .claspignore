@@ -1,0 +1,4 @@
+.claude/**
+*.md
+.gitignore
+node_modules/**
