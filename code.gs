@@ -595,7 +595,7 @@ function normalizeBuyer(raw, buyerList) {
       const snn = stripNoise(name);
       if (!snn) continue;
       const dist = levenshtein(sn, snn);
-      const tol = Math.max(2, Math.floor(Math.min(sn.length, snn.length) / 3));
+      const tol = Math.max(3, Math.floor(Math.min(sn.length, snn.length) / 2));
       if (dist <= tol && dist < bestDist) { bestDist = dist; bestName = name; }
     }
     if (bestName) return bestName;
