@@ -270,6 +270,26 @@ function captureFieldTicket(payload) {
   if (f.driver)     f.driver     = normalizeName(f.driver,     masterLists.drivers);
   if (f.deliver_to) f.deliver_to = normalizeBuyer(f.deliver_to, masterLists.buyers);
 
+  // Duplicate check — reject if ticket number already exists in pending or log
+  if (f.ticket_number) {
+    const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
+    const pendingLast = pendingSheet.getLastRow();
+    if (pendingLast > 1) {
+      const existing = pendingSheet.getRange(2, 1, pendingLast - 1, 1).getValues().flat();
+      if (existing.some(t => String(t).trim() === String(f.ticket_number).trim())) {
+        return { success: false, duplicate: true, message: 'Ticket #' + f.ticket_number + ' is already in Pending Field Tickets.' };
+      }
+    }
+    const logSheet = getOrCreateTab(TABS.LOG, LOG_HEADERS);
+    const logLast = logSheet.getLastRow();
+    if (logLast > 1) {
+      const logTickets = logSheet.getRange(2, 5, logLast - 1, 1).getValues().flat(); // col 5 = Field Ticket #
+      if (logTickets.some(t => String(t).trim() === String(f.ticket_number).trim())) {
+        return { success: false, duplicate: true, message: 'Ticket #' + f.ticket_number + ' has already been logged.' };
+      }
+    }
+  }
+
   // Save to pending field tickets
   const sheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
   sheet.appendRow([
