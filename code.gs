@@ -86,6 +86,14 @@ function callClaudeModel(model, parts) {
   return result.content.map(b => b.text || '').join('').replace(/```json|```/g, '').trim();
 }
 
+function netWeightFlag(val) {
+  if (!val) return null;
+  const n = parseFloat(String(val).replace(/,/g, ''));
+  if (!isNaN(n) && n > 0 && n < 1000)
+    return 'Net Weight (' + val + ') appears low — expected tens of thousands of lbs; verify against delivered ticket';
+  return null;
+}
+
 function extractSplitInfo(remarks) {
   if (!remarks) return { isSplit: false, splitDescription: '' };
   const idx = remarks.toLowerCase().indexOf('split');
@@ -427,6 +435,9 @@ function matchDeliveredTicket(payload) {
   if (d.driver) d.driver = normalizeName(d.driver, masterLists.drivers);
   if (d.buyer)  d.buyer  = normalizeBuyer(d.buyer, masterLists.buyers);
 
+  const nwFlag = netWeightFlag(d.net_weight);
+  if (nwFlag) d.netWeightWarning = nwFlag;
+
   const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
   const lastRow = pendingSheet.getLastRow();
   if (lastRow <= 1) return { success: true, delivered: d, matchResult: 'no_pending', candidates: [] };
@@ -446,9 +457,10 @@ function matchDeliveredTicket(payload) {
     const ticketMatch = best.matched.includes('Ticket #');
     const otherMatches = best.matched.filter(m => m !== 'Ticket #').length;
     if (ticketMatch || otherMatches >= 3) {
-      const loadRow = writeMatchedLoad(best.pending, d, best.matched, best.flags, best.score);
+      const autoFlags = d.netWeightWarning ? [d.netWeightWarning, ...best.flags] : best.flags;
+      const loadRow = writeMatchedLoad(best.pending, d, best.matched, autoFlags, best.score);
       deletePendingRow(pendingSheet, best.pending._row);
-      return { success: true, delivered: d, matchResult: 'auto', score: best.score, matched: best.matched, flags: best.flags, field: best.pending, loadRow };
+      return { success: true, delivered: d, matchResult: 'auto', score: best.score, matched: best.matched, flags: autoFlags, field: best.pending, loadRow };
     }
   }
 
@@ -489,7 +501,9 @@ function manualMatch(payload) {
   const pending = {};
   PENDING_HEADERS.forEach((h, i) => { pending[h] = rowData[i]; });
   pending._row = pendingRow;
-  const loadRow = writeMatchedLoad(pending, deliveredData, matchedFields || [], flags || ['Manually matched'], 0);
+  const nwFlag = netWeightFlag(deliveredData.net_weight);
+  const allFlags = [...(flags || ['Manually matched']), ...(nwFlag ? [nwFlag] : [])];
+  const loadRow = writeMatchedLoad(pending, deliveredData, matchedFields || [], allFlags, 0);
   deletePendingRow(pendingSheet, pendingRow);
   return { success: true, loadRow };
 }
