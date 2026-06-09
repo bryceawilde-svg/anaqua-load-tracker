@@ -286,23 +286,40 @@ function captureFieldTicket(payload) {
     f.deliver_to = masterLists.buyers.some(b => norm(b) === norm(normalized)) ? normalized : '';
   }
 
-  // Duplicate check — reject if ticket number already exists in pending or log
+  // Duplicate check — reject if ticket number OR (field+date) already exists in pending or log
+  const pendingSheetDup = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
+  const pendingLastDup = pendingSheetDup.getLastRow();
+  const logSheetDup = getOrCreateTab(TABS.LOG, LOG_HEADERS);
+  const logLastDup = logSheetDup.getLastRow();
+
   if (f.ticket_number) {
-    const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
-    const pendingLast = pendingSheet.getLastRow();
-    if (pendingLast > 1) {
-      const existing = pendingSheet.getRange(2, 1, pendingLast - 1, 1).getValues().flat();
-      if (existing.some(t => String(t).trim() === String(f.ticket_number).trim())) {
+    // Check by ticket number
+    if (pendingLastDup > 1) {
+      const existing = pendingSheetDup.getRange(2, 1, pendingLastDup - 1, 1).getValues().flat();
+      if (existing.some(t => String(t).trim() === String(f.ticket_number).trim()))
         return { success: false, duplicate: true, message: 'Ticket #' + f.ticket_number + ' is already in Pending Field Tickets.' };
-      }
     }
-    const logSheet = getOrCreateTab(TABS.LOG, LOG_HEADERS);
-    const logLast = logSheet.getLastRow();
-    if (logLast > 1) {
-      const logTickets = logSheet.getRange(2, 5, logLast - 1, 1).getValues().flat(); // col 5 = Field Ticket #
-      if (logTickets.some(t => String(t).trim() === String(f.ticket_number).trim())) {
+    if (logLastDup > 1) {
+      const logTickets = logSheetDup.getRange(2, 5, logLastDup - 1, 1).getValues().flat();
+      if (logTickets.some(t => String(t).trim() === String(f.ticket_number).trim()))
         return { success: false, duplicate: true, message: 'Ticket #' + f.ticket_number + ' has already been logged.' };
-      }
+    }
+  }
+
+  // Fallback: check by field_lot + date in case ticket number wasn't read
+  if (f.field_lot && f.date) {
+    const nfl = norm(f.field_lot), ndt = norm(f.date);
+    if (pendingLastDup > 1) {
+      const pRows = pendingSheetDup.getRange(2, 1, pendingLastDup - 1, PENDING_HEADERS.length).getValues();
+      // col 1 = Ticket#, col 2 = Date, col 5 = Field/Lot
+      if (pRows.some(r => norm(r[4]) === nfl && norm(r[1]) === ndt))
+        return { success: false, duplicate: true, message: 'A ticket for field "' + f.field_lot + '" on ' + f.date + ' is already pending.' };
+    }
+    if (logLastDup > 1) {
+      const lRows = logSheetDup.getRange(2, 1, logLastDup - 1, LOG_HEADERS.length).getValues();
+      // col 3 = Field Date, col 11 = Field/Lot
+      if (lRows.some(r => norm(r[10]) === nfl && norm(r[2]) === ndt))
+        return { success: false, duplicate: true, message: 'A ticket for field "' + f.field_lot + '" on ' + f.date + ' has already been logged.' };
     }
   }
 
