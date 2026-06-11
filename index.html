@@ -870,7 +870,7 @@ function renderLogs(loads) {
       '<div class="load-card-id">#' + (l['Field Ticket #'] || l['Load #']) + '</div>' +
       '<div class="load-card-meta">' + formatDate(l['Field Date']) + ' · ' + (l['Driver'] || '—') + ' · ' + (l['Field / Lot'] || '—') + '</div>' +
       '<div class="load-card-weights">' +
-      '<div class="load-card-weight"><span>Net </span>' + warnIfLowWeight(l['Net Weight']) + '</div>' +
+      '<div class="load-card-weight"><span>Net </span>' + (l['Net Weight'] || '—') + '</div>' +
       '<div class="load-card-weight"><span>Moist </span>' + (l['Moisture'] || '—') + '</div>' +
       '<div class="load-card-weight"><span>Buyer </span>' + (l['Buyer'] || '—') + '</div>' +
       '</div></div>';
