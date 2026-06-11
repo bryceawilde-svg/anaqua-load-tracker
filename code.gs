@@ -51,6 +51,7 @@ function doPost(e) {
     if (action === 'deleteLog')              return respond(deleteLog(payload.row));
     if (action === 'getMasterLists')         return respond(getMasterLists());
     if (action === 'init')                   return respond(initSheets());
+    if (action === 'getCandidates')          return respond(getCandidatesForDelivered(payload));
     return respond({ error: 'Unknown action' });
   } catch (err) {
     return respond({ error: err.message });
@@ -465,6 +466,7 @@ function matchDeliveredTicket(payload) {
 
 function saveUnmatched(payload) {
   const d = payload.deliveredData || {};
+  if (payload.deliveredPendingRow) deleteDeliveredPending(payload.deliveredPendingRow);
   const sheet = getOrCreateTab(TABS.LOG, LOG_HEADERS);
   const loadNum = sheet.getLastRow();
   const buyer = (d.buyer && !norm(d.buyer).includes('anaqua')) ? d.buyer : '';
@@ -487,8 +489,31 @@ function saveUnmatched(payload) {
   return { success: true, row };
 }
 
+function getCandidatesForDelivered(payload) {
+  const dpSheet = getOrCreateTab(TABS.DELIVERED_PENDING, DELIVERED_PENDING_HEADERS);
+  const rowData = dpSheet.getRange(payload.deliveredPendingRow, 1, 1, DELIVERED_PENDING_HEADERS.length).getValues()[0];
+  const dp = {};
+  DELIVERED_PENDING_HEADERS.forEach((h, i) => { dp[h] = rowData[i]; });
+  const delivered = {
+    driver: dp['Driver'], buyer: dp['Buyer'], field_lot: dp['Field Lot'],
+    field_ticket_ref: dp['Field Ticket Ref'], date: dp['Date'], ticket_number: dp['Ticket #']
+  };
+  const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
+  const lastRow = pendingSheet.getLastRow();
+  if (lastRow <= 1) return { success: true, candidates: [] };
+  const pendingData = pendingSheet.getRange(2, 1, lastRow - 1, PENDING_HEADERS.length).getValues();
+  const pending = pendingData.map((row, i) => {
+    const obj = {};
+    PENDING_HEADERS.forEach((h, j) => { obj[h] = row[j]; });
+    obj._row = i + 2;
+    return obj;
+  });
+  const scored = pending.map(p => ({ pending: p, ...scoreMatch(p, delivered) })).sort((a, b) => b.score - a.score);
+  return { success: true, candidates: scored.slice(0, 5).map(s => ({ pending: s.pending, score: s.score, matched: s.matched, flags: s.flags })) };
+}
+
 function manualMatch(payload) {
-  const { pendingRow, deliveredData, matchedFields, flags } = payload;
+  const { pendingRow, deliveredData, matchedFields, flags, deliveredPendingRow } = payload;
   const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
   const rowData = pendingSheet.getRange(pendingRow, 1, 1, PENDING_HEADERS.length).getValues()[0];
   const pending = {};
@@ -496,6 +521,7 @@ function manualMatch(payload) {
   pending._row = pendingRow;
   const loadRow = writeMatchedLoad(pending, deliveredData, matchedFields || [], flags || ['Manually matched'], 0);
   deletePendingRow(pendingSheet, pendingRow);
+  if (deliveredPendingRow) deleteDeliveredPending(deliveredPendingRow);
   return { success: true, loadRow };
 }
 

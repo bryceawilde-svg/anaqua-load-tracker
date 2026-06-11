@@ -142,12 +142,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="status" id="delivered-status"></div>
     <button class="btn btn-blue" onclick="clearDelivered()">Next Delivered Ticket</button>
   </div>
-  <div id="delivered-action-btns" style="display:none;margin:0 0 12px">
-    <div style="display:flex;gap:8px">
-      <button id="action-next-btn" class="btn btn-primary" style="flex:1;margin-bottom:0" onclick="clearDelivered()">Next Ticket</button>
-      <button id="action-hold-btn" class="btn btn-amber" style="flex:1;margin-bottom:0" onclick="holdDelivered(this)">Hold for Later</button>
-    </div>
-  </div>
   <div id="delivered-result"></div>
 </div>
 
@@ -189,6 +183,7 @@ const API = 'https://script.google.com/macros/s/AKfycbz_eVEX5SiNcSOviEcG9RjcTuWf
 let fieldProcessing = false;
 let deliveredProcessing = false;
 let manualDelivered = null;
+let _dpendingData = [];
 
 // ── Cache ─────────────────────────────────────────────────────
 const _cache = {};
@@ -395,6 +390,12 @@ async function matchDelivered(b64, mime) {
     if (data.error) throw new Error(data.error);
     manualDelivered = data.delivered;
     status.textContent = '';
+    if (data.matchResult !== 'auto') {
+      await holdDelivered(null, true);
+      cacheDel('pending', 'dpending', 'logs');
+      updatePendingCount();
+      return;
+    }
     renderDeliveredResult(data);
     cacheDel('pending', 'dpending', 'logs');
     updatePendingCount();
@@ -522,11 +523,9 @@ async function confirmManual(btn, pendingRow) {
   }
 }
 
-async function holdDelivered(btn) {
+async function holdDelivered(btn, auto) {
   if (!manualDelivered) return;
-  const nextBtn = document.getElementById('action-next-btn');
-  btn.disabled = true; btn.textContent = 'Saving...';
-  if (nextBtn) nextBtn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   try {
     const resp = await fetch(API, {
       method: 'POST',
@@ -534,20 +533,18 @@ async function holdDelivered(btn) {
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
-    document.getElementById('delivered-action-btns').style.display = 'none';
     const resultEl2 = document.getElementById('delivered-result');
     resultEl2.innerHTML =
       '<div class="card" style="border-color:var(--amber)">' +
-      '<div style="color:var(--amber);font-weight:500;padding:8px 0">Held in Pending Delivered — will auto-match when field ticket is uploaded</div>' +
+      '<div style="color:var(--amber);font-weight:500;padding:8px 0">Saved to Pending Delivered — match it from the office in the Pending Delivered tab</div>' +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
       '</div>';
     resultEl2.scrollIntoView({ behavior: 'smooth', block: 'start' });
     cacheDel('dpending');
     updateDeliveredPendingCount();
-    toast('Held for later matching');
+    toast('Saved to Pending Delivered');
   } catch(e) {
-    btn.disabled = false; btn.textContent = 'Hold for Later';
-    if (nextBtn) nextBtn.disabled = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Hold for Later'; }
     toast('Error: ' + e.message);
   }
 }
@@ -577,10 +574,11 @@ async function loadDeliveredPending() {
 }
 
 function renderDeliveredPending(list) {
+  _dpendingData = list;
   const el = document.getElementById('dpending-list');
   if (!list.length) { el.innerHTML = '<div class="empty">No pending delivered tickets</div>'; return; }
   el.innerHTML = list.map(p =>
-    '<div class="ticket-card" style="border-color:var(--amber)">' +
+    '<div class="ticket-card" id="dpcard-' + p._row + '" style="border-color:var(--amber)">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
     '<div style="display:flex;gap:6px">' +
     '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">Waiting</span>' +
@@ -591,6 +589,8 @@ function renderDeliveredPending(list) {
     '<div class="ticket-card-meta">' + formatDate(p['Date']) + ' &middot; ' + (p['Driver'] || '?') + ' &middot; ' + (p['Buyer'] || '?') + '</div>' +
     '<div class="ticket-card-meta">Net: ' + (p['Net Weight'] || '?') + ' &middot; Field Lot: ' + (p['Field Lot'] || '?') + '</div>' +
     (p['Field Ticket Ref'] ? '<div class="ticket-card-meta">Ref: ' + p['Field Ticket Ref'] + '</div>' : '') +
+    '<div class="btn-row" style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="matchFromPendingDelivered(this,' + p._row + ')">Match</button></div>' +
+    '<div id="dpmatch-' + p._row + '"></div>' +
     '</div>'
   ).join('');
 }
@@ -623,13 +623,114 @@ async function saveUnmatched(btn) {
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
-    document.getElementById('delivered-action-btns').style.display = 'none';
     document.getElementById('delivered-result').innerHTML =
       '<div class="card" style="border-color:var(--red)">' +
       '<div style="color:var(--red);font-weight:500;padding:4px 0">Saved as unmatched — flagged for review in Load Log</div>' +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
       '</div>';
     cacheDel('logs');
+    toast('Saved as unmatched');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Save as unmatched';
+    toast('Error: ' + e.message);
+  }
+}
+
+// ── Office matching (Pending Delivered tab) ────────────────────
+function dpRowToDeliveredData(p) {
+  return {
+    ticket_number: p['Ticket #'], date: p['Date'], buyer: p['Buyer'],
+    gross_weight: p['Gross Weight'], tare_weight: p['Tare Weight'],
+    net_weight: p['Net Weight'], moisture: p['Moisture'],
+    bushel_weight: p['Bushel Weight'], field_lot: p['Field Lot'],
+    driver: p['Driver'], field_ticket_ref: p['Field Ticket Ref']
+  };
+}
+
+async function matchFromPendingDelivered(btn, row) {
+  const resultEl = document.getElementById('dpmatch-' + row);
+  btn.disabled = true; btn.textContent = 'Loading...';
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'getCandidates', deliveredPendingRow: row })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    btn.style.display = 'none';
+    const candidates = data.candidates || [];
+    resultEl.innerHTML =
+      (candidates.length
+        ? '<div class="section-label" style="margin-top:10px">Select matching field ticket</div>' +
+          candidates.map(c => officeCandidateCard(c, row)).join('')
+        : '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">No matching field tickets found</div>') +
+      '<div class="btn-row"><button class="btn btn-red btn-sm" onclick="officeSaveUnmatched(this,' + row + ')">Save as unmatched</button></div>';
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Match';
+    toast('Error: ' + e.message);
+  }
+}
+
+function officeCandidateCard(c, deliveredPendingRow) {
+  const p = c.pending || {};
+  const score = c.score || 0;
+  const conf = score >= 4 ? 'high' : score >= 3 ? 'medium' : 'low';
+  return '<div class="ticket-card" style="margin-top:6px">' +
+    '<div style="display:flex;gap:6px;margin-bottom:6px"><span class="badge badge-' + conf + '">' + score + '/5</span></div>' +
+    '<div class="ticket-card-id">Field Ticket #' + (p['Ticket #'] || '?') + '</div>' +
+    '<div class="ticket-card-meta">' + formatDate(p['Date']) + ' &middot; ' + (p['Driver'] || '?') + '</div>' +
+    '<div class="ticket-card-meta">Field: ' + (p['Field / Lot'] || '?') + ' &middot; ' + (p['Deliver To'] || '?') + '</div>' +
+    (c.matched && c.matched.length ? '<div class="ticket-card-meta" style="color:var(--green)">&#10003; ' + c.matched.join(' &middot; ') + '</div>' : '') +
+    '<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="officeConfirmMatch(this,' + p._row + ',' + deliveredPendingRow + ')">Confirm Match</button>' +
+    '</div>';
+}
+
+async function officeConfirmMatch(btn, fieldPendingRow, deliveredPendingRow) {
+  btn.disabled = true; btn.textContent = 'Matching...';
+  const p = _dpendingData.find(d => d._row === deliveredPendingRow) || {};
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'manualMatch',
+        pendingRow: fieldPendingRow,
+        deliveredData: dpRowToDeliveredData(p),
+        deliveredPendingRow: deliveredPendingRow,
+        matchedFields: [], flags: ['Manually matched']
+      })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    const card = document.getElementById('dpcard-' + deliveredPendingRow);
+    if (card) card.remove();
+    cacheDel('pending', 'dpending', 'logs');
+    updateDeliveredPendingCount();
+    updatePendingCount();
+    toast('&#10003; Load matched and saved');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Confirm Match';
+    toast('Error: ' + e.message);
+  }
+}
+
+async function officeSaveUnmatched(btn, deliveredPendingRow) {
+  btn.disabled = true; btn.textContent = 'Saving...';
+  const p = _dpendingData.find(d => d._row === deliveredPendingRow) || {};
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'saveUnmatched',
+        deliveredData: dpRowToDeliveredData(p),
+        deliveredPendingRow: deliveredPendingRow
+      })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    const card = document.getElementById('dpcard-' + deliveredPendingRow);
+    if (card) card.remove();
+    cacheDel('dpending', 'logs');
+    updateDeliveredPendingCount();
     toast('Saved as unmatched');
   } catch(e) {
     btn.disabled = false; btn.textContent = 'Save as unmatched';
