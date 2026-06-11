@@ -433,6 +433,25 @@ function matchDeliveredTicket(payload) {
   if (d.driver) d.driver = normalizeName(d.driver, masterLists.drivers);
   if (d.buyer)  d.buyer  = normalizeBuyer(d.buyer, masterLists.buyers);
 
+  // Duplicate check — reject if ticket number already exists in pending delivered or log
+  if (d.ticket_number) {
+    const dupNum = String(d.ticket_number).trim().replace(/^0+/, '');
+    const dpDupSheet = getOrCreateTab(TABS.DELIVERED_PENDING, DELIVERED_PENDING_HEADERS);
+    const dpDupLast = dpDupSheet.getLastRow();
+    if (dpDupLast > 1) {
+      const existing = dpDupSheet.getRange(2, 1, dpDupLast - 1, 1).getValues().flat();
+      if (existing.some(t => String(t).trim().replace(/^0+/, '') === dupNum))
+        return { success: false, duplicate: true, message: 'Delivered ticket #' + d.ticket_number + ' is already in Pending Delivered.' };
+    }
+    const logDupSheet = getOrCreateTab(TABS.LOG, LOG_HEADERS);
+    const logDupLast = logDupSheet.getLastRow();
+    if (logDupLast > 1) {
+      const logTickets = logDupSheet.getRange(2, 6, logDupLast - 1, 1).getValues().flat();
+      if (logTickets.some(t => String(t).trim().replace(/^0+/, '') === dupNum))
+        return { success: false, duplicate: true, message: 'Delivered ticket #' + d.ticket_number + ' has already been logged.' };
+    }
+  }
+
   const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
   const lastRow = pendingSheet.getLastRow();
   if (lastRow <= 1) return { success: true, delivered: d, matchResult: 'no_pending', candidates: [] };
