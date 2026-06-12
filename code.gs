@@ -67,7 +67,7 @@ function callClaude(parts) {
 }
 
 function callClaudeSonnet(parts) {
-  return callClaudeModel('claude-sonnet-4-5', parts);
+  return callClaudeModel('claude-sonnet-4-6', parts);
 }
 
 function callClaudeModel(model, parts) {
