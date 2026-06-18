@@ -195,7 +195,10 @@ function normStr(s) { return (s||'').toLowerCase().trim(); }
 function formatDate(val) {
   if (!val) return '—';
   const s = String(val).trim();
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) return s;
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+    const p = s.split('/');
+    return p[0].padStart(2,'0') + '/' + p[1].padStart(2,'0') + '/' + p[2];
+  }
   // Handle 2-digit year (e.g. "6/18/26" from OCR)
   const twoDigit = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
   if (twoDigit) {
