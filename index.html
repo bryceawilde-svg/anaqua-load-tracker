@@ -196,6 +196,12 @@ function formatDate(val) {
   if (!val) return '—';
   const s = String(val).trim();
   if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) return s;
+  // Handle 2-digit year (e.g. "6/18/26" from OCR)
+  const twoDigit = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (twoDigit) {
+    const yr = parseInt(twoDigit[3], 10) + 2000;
+    return (twoDigit[1].length<2?'0'+twoDigit[1]:twoDigit[1]) + '/' + (twoDigit[2].length<2?'0'+twoDigit[2]:twoDigit[2]) + '/' + yr;
+  }
   const d = new Date(s);
   if (isNaN(d.getTime())) return s;
   const m = d.getUTCMonth() + 1, day = d.getUTCDate(), yr = d.getUTCFullYear();
@@ -414,17 +420,19 @@ function renderDeliveredResult(data) {
 
   if (data.matchResult === 'auto') {
     actionBtns.style.display = 'none';
-    const f = data.field || {};
+    const field = data.field || {};
     const score = data.score || 0;
     const conf = score >= 4 ? 'high' : 'medium';
+    const matchedList = Array.isArray(data.matched) ? data.matched : [];
+    const flagsList = Array.isArray(data.flags) ? data.flags : [];
     el.innerHTML =
-      '<div class="card">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
-      '<span class="badge badge-' + conf + '">Auto-matched (' + score + '/5)</span></div>' +
+      '<div class="card" style="border-color:var(--green)">' +
+      '<div style="background:var(--green-bg);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px">' +
+      '<div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px;">✓ Auto-matched and saved!</div>' +
+      '<div style="font-size:12px;color:var(--text-2)">Score ' + score + '/5 · Matched on: ' + matchedList.join(', ') + '</div>' +
+      '</div>' +
       scoreBar(score) +
-      '<div class="section-label">Matched on</div>' +
-      '<div style="font-size:13px;color:var(--green);margin-bottom:10px;">✓ ' + (data.matched || []).join(' · ') + '</div>' +
-      (data.flags && data.flags.length ? '<div class="section-label" style="color:var(--amber)">Notes</div>' + data.flags.map(f=>'<div class="flag-item" style="color:var(--amber)">⚠ '+f+'</div>').join('') : '') +
+      (flagsList.length ? '<div class="section-label" style="color:var(--amber)">Notes</div>' + flagsList.map(function(flag){ return '<div class="flag-item" style="color:var(--amber)">⚠ '+flag+'</div>'; }).join('') : '') +
       '<div class="section-label">Delivered weight</div>' +
       '<div class="field-grid">' +
       fi('Net weight', d.net_weight) + fi('Moisture', d.moisture) +
@@ -433,21 +441,25 @@ function renderDeliveredResult(data) {
       '</div>' +
       '<div class="section-label">Matched to field ticket</div>' +
       '<div class="field-grid">' +
-      fi('Ticket #', f['Ticket #']) + fi('Driver', f['Driver']) +
-      fi('Field / Lot', f['Field / Lot']) + fi('Date', formatDate(f['Date'])) +
+      fi('Ticket #', field['Ticket #']) + fi('Driver', field['Driver']) +
+      fi('Field / Lot', field['Field / Lot']) + fi('Date', formatDate(field['Date'])) +
       '</div>' +
-      (f['Is Split'] === 'Yes' ? '<div class="split-banner"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (f['Split Description'] || '') + '</div></div>' : '') +
+      (field['Is Split'] === 'Yes' ? '<div class="split-banner"><div class="split-banner-label">⚡ Split Load</div><div class="split-banner-val">' + (field['Split Description'] || '') + '</div></div>' : '') +
       '<div class="btn-row"><button class="btn btn-sm btn-primary" onclick="clearDelivered()">Next delivered ticket</button></div>' +
       '</div>';
     toast('✓ Load matched and saved');
 
   } else if (data.matchResult === 'manual') {
-    actionBtns.style.display = '';
-    const nextBtn = document.getElementById('action-next-btn');
-    const holdBtn = document.getElementById('action-hold-btn');
-    if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Next Ticket'; }
-    if (holdBtn) { holdBtn.disabled = false; holdBtn.textContent = 'Hold for Later'; }
     const candidates = data.candidates || [];
+    if (candidates.length) {
+      actionBtns.style.display = '';
+      const nextBtn = document.getElementById('action-next-btn');
+      const holdBtn = document.getElementById('action-hold-btn');
+      if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Next Ticket'; }
+      if (holdBtn) { holdBtn.disabled = false; holdBtn.textContent = 'Hold for Later'; }
+    } else {
+      actionBtns.style.display = 'none';
+    }
     el.innerHTML =
       '<div class="card" style="border-color:var(--amber)">' +
       '<div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:10px;">⚠ Could not auto-match — select the correct field ticket</div>' +
@@ -461,18 +473,22 @@ function renderDeliveredResult(data) {
         '<div class="section-label">Select matching field ticket</div>' +
         candidates.map(c => candidateCard(c)).join('') :
         '<div class="card" style="border-color:var(--amber);margin-top:4px"><div class="empty" style="padding:16px 0">No matching field tickets found</div>' +
-        '<div class="btn-row"><button class="btn btn-red" onclick="saveUnmatched()">Save as unmatched</button></div></div>');
+        '<div class="btn-row" style="flex-direction:column;gap:6px">' +
+        '<button class="btn btn-amber" onclick="holdDelivered(this)">Hold for Later (keep in Pending)</button>' +
+        '<button class="btn btn-sm" style="color:var(--text-3);border-color:var(--border)" onclick="clearDelivered()">Cancel — discard this scan</button>' +
+        '<button class="btn btn-sm btn-red" onclick="saveUnmatched(this)">Save as Unmatched (goes to Load Log)</button>' +
+        '</div></div>');
 
   } else if (data.matchResult === 'no_pending') {
-    actionBtns.style.display = '';
-    const nextBtn2 = document.getElementById('action-next-btn');
-    const holdBtn2 = document.getElementById('action-hold-btn');
-    if (nextBtn2) { nextBtn2.disabled = false; nextBtn2.textContent = 'Next Ticket'; }
-    if (holdBtn2) { holdBtn2.disabled = false; holdBtn2.textContent = 'Hold for Later'; }
+    actionBtns.style.display = 'none';
     el.innerHTML =
       '<div class="card" style="border-color:var(--amber)">' +
       '<div class="empty" style="padding:16px 0">No pending field tickets in queue</div>' +
-      '<div class="btn-row"><button class="btn btn-red" onclick="saveUnmatched(this)">Save as unmatched</button></div>' +
+      '<div class="btn-row" style="flex-direction:column;gap:6px">' +
+      '<button class="btn btn-amber" onclick="holdDelivered(this)">Hold for Later (keep in Pending)</button>' +
+      '<button class="btn btn-sm" style="color:var(--text-3);border-color:var(--border)" onclick="clearDelivered()">Cancel — discard this scan</button>' +
+      '<button class="btn btn-sm btn-red" onclick="saveUnmatched(this)">Save as Unmatched (goes to Load Log)</button>' +
+      '</div>' +
       '</div>';
   }
 }
