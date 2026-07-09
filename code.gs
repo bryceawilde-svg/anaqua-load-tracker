@@ -39,6 +39,7 @@ function doPost(e) {
     const action = payload.action;
     if (action === 'captureField')        return respond(captureFieldTicket(payload));
     if (action === 'matchDelivered')      return respond(matchDeliveredTicket(payload));
+    if (action === 'matchDeliveredBulk')  return respond(matchDeliveredTicketsBulk(payload));
     if (action === 'getPending')          return respond(getPending());
     if (action === 'getDeliveredPending') return respond(getDeliveredPending());
     if (action === 'holdDelivered')       return respond(holdDelivered(payload));
@@ -70,10 +71,14 @@ function callClaudeSonnet(parts) {
   return callClaudeModel('claude-sonnet-4-6', parts);
 }
 
-function callClaudeModel(model, parts) {
+function callClaudeSonnetBulk(parts) {
+  return callClaudeModel('claude-sonnet-4-6', parts, 8192);
+}
+
+function callClaudeModel(model, parts, maxTokens) {
   const requestBody = {
     model: model,
-    max_tokens: 1024,
+    max_tokens: maxTokens || 1024,
     messages: [{ role: 'user', content: parts }]
   };
   const response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
@@ -481,6 +486,109 @@ function matchDeliveredTicket(payload) {
     success: true, delivered: d, matchResult: 'manual',
     candidates: scored.slice(0, 5).map(s => ({ pending: s.pending, score: s.score, matched: s.matched, flags: s.flags }))
   };
+}
+
+function matchDeliveredTicketsBulk(payload) {
+  const { imageB64, mime } = payload;
+  const prompt = 'You are reading a PDF containing MULTIPLE DELIVERED/SCALE TICKETS from grain elevators or buyers in Texas — ' +
+    'typically one ticket per page, though a page may occasionally contain more than one. ' +
+    'Process every page and every ticket you find — do not skip or merge any of them. ' +
+    'The company name printed at the TOP of each ticket is the BUYER (the elevator or gin) — e.g. Texas Valley Grain, Willamar Cotton & Grain, Chapa Grain. ' +
+    'Anaqua Farms is the CUSTOMER or ACCOUNT on the ticket — they are NOT the buyer. ' +
+    'Crop normalization: milo/yellow sorghum/sorghum/gr sorghum/milo maize = "Grain Sorghum". Yellow corn/yell corn/corn = "Corn". ' +
+    'Return ONLY a raw JSON array, no markdown, no backticks, no wrapper object — one element per ticket, in the order the tickets appear in the document. ' +
+    'Element structure: {"ticket_number":"","date":"","buyer":"","gross_weight":"","tare_weight":"","net_weight":"","moisture":"","bushel_weight":"","field_lot":"","driver":"","field_ticket_ref":"","crop":""} ' +
+    'For field_lot on Willamar Cotton & Grain tickets: find the line with "Sheet #:" — it contains a 6-digit sheet number followed by the field lot (e.g. "Sheet #: 400142 6552-1750" → field_lot = "6552-1750"). Capture only the value after the 6-digit number. ' +
+    'For Dirt-Tech Farms / DIRT-TECH FARMS, LLC tickets: buyer = "Dirt-Tech Farms" (the elevator name in the top-left Elevator Section). field_lot = the value under "Lot #". crop = the value under "Product". field_ticket_ref = the value under "OrgTicket". driver = the name in the Transport Section (e.g. BUBBA). ticket_number = the number in the "Ticket In" box. bushel_weight = the value in the "Test Weight" box. ' +
+    'For ELKINS GRAIN, LLC. / GSI INTL tickets (look for "Elevator Section" in the top-LEFT with "ELKINS GRAIN, LLC." or "GSI INTL"): buyer = "Elkins Grain". field_lot = the value under "ORGWEIGHT". field_ticket_ref = the value under "Org Ticket". Note: the "Lot Number" field on these tickets identifies the producer — do NOT use it as field_lot. ' +
+    'Field IDs on these tickets can vary in format. They may be a 3 or 4 digit number alone, a number followed by a location name, a number followed by a location name and letter/number suffix, or two numbers separated by a dash. Examples: "678", "6788", "6788 HomePlace 3C", "6664 800 North Willacy", "4662-4255". Read every digit carefully and completely — do not drop or add digits. If a digit is unclear, make your best guess based on the surrounding context and handwriting style. Always return something rather than null for field IDs. ' +
+    'For field_ticket_ref: find any of these — ANAQ followed by digits (e.g. ANAQ4520), or a value next to Ref:, ORG Ticket, Field Ticket, or Load #. Capture full raw text. ' +
+    'For ticket_number: find the scale ticket number — a 4–6 digit integer in a prominent box or field labeled "Ticket #", "Ticket No.", "Scale Ticket", "Ticket In", or similar near the top of the ticket. Read every digit carefully. Do NOT confuse with lot numbers, sheet numbers, org ticket references, weight scale IDs, or any other number on the ticket. SELF-CHECK: should be a plain 4–6 digit integer with no letters or special characters. ' +
+    'For gross_weight, tare_weight, and net_weight: these are weights in pounds — always large whole numbers with no decimal point. Read each value DIRECTLY from the ticket by finding its specific label — gross_weight is next to "GROSS" or "GROSS WEIGHT", tare_weight is next to "TARE" or "TARE WEIGHT", net_weight is next to "NET" or "NET WEIGHT" or "NET WT". Do NOT compute net_weight by subtracting tare from gross — the ticket prints all three and you must read each one independently from its own label. Gross is typically 55,000–85,000, tare 25,000–35,000 (never less than 20,000), net 30,000–65,000. They are printed with a comma thousands separator (e.g. "74,780" or "74780"). The comma is NOT a decimal point — return "74780", never "74.78". SELF-CHECK: if gross or net is less than 1,000, or if tare is less than 20,000, or if any weight contains a decimal point, you have misread it — re-examine the ticket and correct it before returning. ' +
+    'For moisture: a small decimal percentage, always between 10.0 and 25.0 (e.g. 15.4, not 154 or 15400). If you read a value over 25, you have likely misread a decimal point — re-examine and correct it. ' +
+    'For bushel_weight: look for a value labeled "Test Weight", "Bushel Weight", "Lbs/Bu", "TW", or "Test Wt". A small decimal number, always between 50.0 and 65.0 (e.g. 60.2, not 602 or 60200). If you read a value over 65, you have likely misread a decimal point — re-examine and correct it. ' +
+    'For driver: look for a person\'s name labeled as driver, hauler, or trucker. Never use weight labels (Tare, Gross, Net, WT), dates, ticket numbers, or field labels as the driver name. Use null if no clear driver name is present. ' +
+    'For the date: read it directly from each ticket. This is a BATCH of tickets that may span several days or weeks — do NOT assume they are from today. Today is ' + new Date().toLocaleDateString('en-US') + '; use it only as a tiebreaker for an ambiguous year. ' +
+    'Use null for unreadable fields. Never guess numbers.';
+
+  const tickets = JSON.parse(callClaudeSonnetBulk([
+    { type: 'document', source: { type: 'base64', media_type: mime || 'application/pdf', data: imageB64 } },
+    { type: 'text', text: prompt }
+  ]));
+
+  const masterLists = getMasterLists();
+
+  const results = (Array.isArray(tickets) ? tickets : []).map(raw => {
+    try {
+      const d = raw || {};
+      if (d.ticket_number) d.ticket_number = parseInt(d.ticket_number.toString().replace(/^0+/, ''), 10) || d.ticket_number;
+      if (d.driver) d.driver = normalizeName(d.driver, masterLists.drivers);
+      if (d.buyer)  d.buyer  = normalizeBuyer(d.buyer, masterLists.buyers);
+
+      if (d.ticket_number) {
+        const dupNum = String(d.ticket_number).trim().replace(/^0+/, '');
+        const dpDupSheet = getOrCreateTab(TABS.DELIVERED_PENDING, DELIVERED_PENDING_HEADERS);
+        const dpDupLast = dpDupSheet.getLastRow();
+        if (dpDupLast > 1) {
+          const existing = dpDupSheet.getRange(2, 1, dpDupLast - 1, 1).getValues().flat();
+          if (existing.some(t => String(t).trim().replace(/^0+/, '') === dupNum))
+            return { success: false, duplicate: true, message: 'Delivered ticket #' + d.ticket_number + ' is already in Pending Delivered.', delivered: d };
+        }
+        const logDupSheet = getOrCreateTab(TABS.LOG, LOG_HEADERS);
+        const logDupLast = logDupSheet.getLastRow();
+        if (logDupLast > 1) {
+          const logTickets = logDupSheet.getRange(2, 6, logDupLast - 1, 1).getValues().flat();
+          if (logTickets.some(t => String(t).trim().replace(/^0+/, '') === dupNum))
+            return { success: false, duplicate: true, message: 'Delivered ticket #' + d.ticket_number + ' has already been logged.', delivered: d };
+        }
+      }
+
+      return processDeliveredTicketAuto(d);
+    } catch (err) {
+      return { success: false, message: err.message, delivered: raw };
+    }
+  });
+
+  return {
+    success: true,
+    count: results.length,
+    autoMatched: results.filter(r => r.matchResult === 'auto').length,
+    held: results.filter(r => r.matchResult === 'held').length,
+    duplicates: results.filter(r => r.duplicate).length,
+    results
+  };
+}
+
+// Matches a single normalized delivered ticket against pending field tickets;
+// auto-matches on a strong score, otherwise holds it in Pending Delivered for manual review.
+function processDeliveredTicketAuto(d) {
+  const pendingSheet = getOrCreateTab(TABS.PENDING, PENDING_HEADERS);
+  const lastRow = pendingSheet.getLastRow();
+  if (lastRow > 1) {
+    const pendingData = pendingSheet.getRange(2, 1, lastRow - 1, PENDING_HEADERS.length).getValues();
+    const pending = pendingData.map((row, i) => {
+      const obj = {};
+      PENDING_HEADERS.forEach((h, j) => { obj[h] = row[j]; });
+      obj._row = i + 2;
+      return obj;
+    });
+
+    const scored = pending.map(p => ({ pending: p, ...scoreMatch(p, d) })).sort((a, b) => b.score - a.score);
+    const best = scored[0];
+
+    if (best) {
+      const ticketMatch = best.matched.includes('Ticket #');
+      const otherMatches = best.matched.filter(m => m !== 'Ticket #').length;
+      if (ticketMatch || otherMatches >= 3) {
+        const loadRow = writeMatchedLoad(best.pending, d, best.matched, best.flags, best.score);
+        deletePendingRow(pendingSheet, best.pending._row);
+        return { success: true, delivered: d, matchResult: 'auto', score: best.score, matched: best.matched, loadRow };
+      }
+    }
+  }
+
+  const held = holdDelivered({ deliveredData: d });
+  return { success: true, delivered: d, matchResult: 'held', row: held.row };
 }
 
 function saveUnmatched(payload) {
